@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f1f0f" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ClearTheBench</title>
 
@@ -13,8 +13,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 
-  <!-- Supabase CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <!-- Supabase CDN — no defer, must load before db.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <!-- Config (injected at build, gitignored) -->
   <script src="/supabase-config.js"></script>
@@ -29,14 +29,14 @@
     <div id="screen-container"></div>
   </div>
 
-  <!-- JS modules — order matters -->
-  <script src="/js/db.js" defer></script>
-  <script src="/js/auth.js" defer></script>
-  <script src="/js/router.js" defer></script>
-  <script src="/js/teams.js" defer></script>
-  <script src="/js/game.js" defer></script>
-  <script src="/js/stats.js" defer></script>
-  <script src="/js/strategy.js" defer></script>
+  <!-- JS modules — order matters, no defer -->
+  <script src="/js/db.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/router.js"></script>
+  <script src="/js/teams.js"></script>
+  <script src="/js/game.js"></script>
+  <script src="/js/stats.js"></script>
+  <script src="/js/strategy.js"></script>
 
 </body>
 </html>
