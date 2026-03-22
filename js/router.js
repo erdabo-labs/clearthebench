@@ -26,6 +26,14 @@ function router_navigate(name, params = {}) {
 // ── INIT ──────────────────────────────────────────────────────
 
 async function router_init() {
+  const params = new URLSearchParams(window.location.search);
+  const gameId = params.get('game');
+
+  if (gameId) {
+    router_navigate('watch', { gameId });
+    return;
+  }
+
   const coach = await auth_init();
 
   // Always start at home — home screen handles signed-in vs signed-out state
