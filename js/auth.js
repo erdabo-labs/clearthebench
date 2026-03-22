@@ -2,16 +2,14 @@
 // auth.js — magic link, coach session, editor code
 // =============================================================
 
-const AUTH_KEY = 'ctb_coach';
+const AUTH_KEY   = 'ctb_coach';
+const EDITOR_KEY = 'ctb_editor';
 
 // ── SESSION ───────────────────────────────────────────────────
 
 function auth_getSession() {
-  try {
-    return JSON.parse(localStorage.getItem(AUTH_KEY));
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(localStorage.getItem(AUTH_KEY)); }
+  catch { return null; }
 }
 
 function auth_saveSession(coach) {
@@ -29,23 +27,16 @@ function auth_isCoach() {
 // ── MAGIC LINK ────────────────────────────────────────────────
 
 async function auth_sendMagicLink(email) {
-  const { error } = await supabase.auth.signInWithOtp({
+  const { error } = await _db.auth.signInWithOtp({
     email,
-    options: {
-      emailRedirectTo: window.location.origin,
-    },
+    options: { emailRedirectTo: window.location.origin },
   });
-
-  if (error) {
-    console.error('auth_sendMagicLink', error);
-    return { ok: false, message: error.message };
-  }
+  if (error) { console.error('auth_sendMagicLink', error); return { ok: false, message: error.message }; }
   return { ok: true };
 }
 
 async function auth_handleMagicLinkCallback() {
-  // Supabase handles the token in the URL hash automatically
-  const { data: { session }, error } = await supabase.auth.getSession();
+  const { data: { session }, error } = await _db.auth.getSession();
   if (error || !session) return null;
 
   const coach = await db_getOrCreateCoach(session.user.email);
@@ -54,21 +45,16 @@ async function auth_handleMagicLinkCallback() {
 }
 
 async function auth_signOut() {
-  await supabase.auth.signOut();
+  await _db.auth.signOut();
   auth_clearSession();
-  router_navigate('home');
+  router_navigate('home', {});
 }
 
 // ── EDITOR CODE ───────────────────────────────────────────────
 
-const EDITOR_KEY = 'ctb_editor';
-
 function auth_getEditorTeam() {
-  try {
-    return JSON.parse(localStorage.getItem(EDITOR_KEY));
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(localStorage.getItem(EDITOR_KEY)); }
+  catch { return null; }
 }
 
 function auth_saveEditorTeam(team) {
@@ -82,26 +68,23 @@ function auth_clearEditorTeam() {
 async function auth_signInWithEditorCode(code) {
   const team = await db_getTeamByEditorCode(code);
   if (!team) return { ok: false, message: 'Code not found. Check with your head coach.' };
-
   auth_saveEditorTeam(team);
   return { ok: true, team };
 }
 
 // ── INIT ──────────────────────────────────────────────────────
-// Called once on app load — checks for magic link callback
 
 async function auth_init() {
-  // Check if returning from magic link
+  // Check if returning from magic link (token in URL hash)
   const hash = window.location.hash;
   if (hash && hash.includes('access_token')) {
     const coach = await auth_handleMagicLinkCallback();
-    // Clean the URL
     history.replaceState(null, '', window.location.pathname);
     return coach;
   }
 
-  // Check existing Supabase session (tab refresh etc.)
-  const { data: { session } } = await supabase.auth.getSession();
+  // Check existing Supabase session (tab refresh, etc.)
+  const { data: { session } } = await _db.auth.getSession();
   if (session) {
     const saved = auth_getSession();
     if (saved) return saved;
