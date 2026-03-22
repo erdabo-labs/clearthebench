@@ -161,7 +161,7 @@ function _bindCreateGame(container, params, sport, defaultFieldSize) {
       opponent:         opponent || null,
       mode:             team.sport,
       fieldSize,
-      strategySnapshot: strategy || null,
+      strategySnapshot: strategy || {},
       playerIds,
     });
 
