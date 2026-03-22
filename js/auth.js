@@ -75,24 +75,22 @@ async function auth_signInWithEditorCode(code) {
 // ── INIT ──────────────────────────────────────────────────────
 
 async function auth_init() {
-  // Check if returning from magic link (token in URL hash)
   const hash = window.location.hash;
+  if (hash && hash.includes('error=')) {
+    history.replaceState(null, '', window.location.pathname);
+  }
   if (hash && hash.includes('access_token')) {
     const coach = await auth_handleMagicLinkCallback();
     history.replaceState(null, '', window.location.pathname);
     return coach;
   }
-
-  // Check existing Supabase session (tab refresh, etc.)
   const { data: { session } } = await _db.auth.getSession();
   if (session) {
     const saved = auth_getSession();
     if (saved) return saved;
-    // Session exists but no local record — re-fetch
     const coach = await db_getOrCreateCoach(session.user.email);
     if (coach) auth_saveSession(coach);
     return coach;
   }
-
   return null;
 }
