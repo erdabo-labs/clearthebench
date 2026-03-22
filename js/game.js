@@ -66,7 +66,7 @@ function _createGameHTML(team, sport, defaultFieldSize) {
 
           <div style="margin-top:20px;">
             <button class="btn-primary" id="btn-start-game"
-              disabled style="opacity:0.4;">START IT</button>
+              disabled style="opacity:0.4;">START GAME</button>
             <div id="create-game-msg"
               style="color:var(--red); font-size:13px; min-height:20px; margin-top:8px;"></div>
           </div>
@@ -166,7 +166,7 @@ function _bindCreateGame(container, params, sport, defaultFieldSize) {
     });
 
     startBtn.disabled      = false;
-    startBtn.textContent   = 'START IT';
+    startBtn.textContent   = 'START GAME';
     startBtn.style.opacity = '';
 
     if (!game) {
