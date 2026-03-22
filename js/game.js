@@ -863,5 +863,335 @@ function _median(arr) {
     : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-// ── SPECTATOR (TODO) — Step 7 ─────────────────────────────────
-// router_register('watch', ...) — Step 7
+// ── SPECTATOR VIEW ────────────────────────────────────────────
+
+router_register('watch', async (container, { gameId }) => {
+  _gs = null;
+
+  container.innerHTML = `
+    <div class="screen">
+      <div class="screen-body" style="display:flex;align-items:center;justify-content:center;padding:40px 20px;">
+        <div style="color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:13px;">
+          Loading game...
+        </div>
+      </div>
+    </div>
+  `;
+
+  const [game, roster, events] = await Promise.all([
+    db_getGame(gameId),
+    db_getGameRoster(gameId),
+    db_getGameEvents(gameId),
+  ]);
+
+  if (!game) {
+    container.innerHTML = `
+      <div class="screen">
+        <div class="screen-body" style="display:flex;align-items:center;justify-content:center;
+          padding:40px 20px;flex-direction:column;gap:12px;text-align:center;">
+          <div style="font-size:48px;">🏟️</div>
+          <div style="color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:13px;">
+            Game not found.<br>
+            This link may be invalid or the game may have been removed.
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const team   = game.seasons?.teams   || {};
+  const season = game.seasons           || {};
+
+  await _initGameState(game, roster, events, { coach: null, team, season });
+  _gs.events = events.slice(); // store for elapsed-time derivation
+
+  if (_gs.mode !== 'football') {
+    _gs.timerSeconds = _deriveElapsedSeconds();
+    for (const id of Object.keys(_gs.players)) {
+      const ps = _gs.players[id];
+      if (ps.onField) {
+        ps.currentStint = Math.max(0, _gs.timerSeconds - (ps.fieldEnteredAt || 0));
+      }
+    }
+  }
+
+  _renderSpectatorScreen(container);
+
+  _gs.realtimeChannel = db_subscribeToGame(gameId, (payload) => {
+    const event = payload.new;
+    if (_gs.events) _gs.events.push(event);
+    _applyEvent(event);
+    if (_gs.mode !== 'football') {
+      _gs.timerSeconds = _deriveElapsedSeconds();
+      for (const id of Object.keys(_gs.players)) {
+        const ps = _gs.players[id];
+        if (ps.onField) {
+          ps.currentStint = Math.max(0, _gs.timerSeconds - (ps.fieldEnteredAt || 0));
+        }
+      }
+      _renderClock(container);
+    }
+    _renderSpectatorGame(container);
+    if (_gs.mode === 'football') _renderSpectatorSeriesDots(container);
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (_gs?.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+  });
+});
+
+function _renderSpectatorScreen(container) {
+  _gs.container = container;
+  const game  = _gs.game;
+  const title = game.opponent
+    ? `vs ${_esc(game.opponent)}`
+    : _esc(_gs.team?.short_code || _gs.team?.name || '');
+
+  container.innerHTML = `
+    <div class="screen">
+      <div class="spectator-banner">
+        <span class="clock-dot" style="display:inline-block;margin-right:6px;
+          vertical-align:middle;"></span>
+        Spectator view · Live
+      </div>
+      <div class="game-header">
+        <div class="game-meta">
+          <div class="game-title">${title}</div>
+          ${_gs.mode !== 'football' ? `
+            <div class="game-clock" id="game-clock">
+              <div class="clock-dot"></div>
+              <span id="clock-text">${_formatTime(_gs.timerSeconds)}</span>
+            </div>
+          ` : ''}
+        </div>
+        ${_gs.mode === 'football' ? _spectatorSeriesBarHTML() : ''}
+      </div>
+      <div class="screen-body" id="game-body">
+        <div class="field-zone" id="field-zone"></div>
+        <div class="bench-zone" id="bench-zone"></div>
+      </div>
+    </div>
+  `;
+
+  _renderSpectatorGame(container);
+}
+
+function _spectatorSeriesBarHTML() {
+  const displayNum = _gs.seriesNum % 10;
+  let dotsHTML = '';
+  for (let i = 0; i < 10; i++) {
+    dotsHTML += `<div class="series-dot${i < displayNum ? '' : ' empty'}"></div>`;
+  }
+  return `
+    <div class="series-bar">
+      <div class="series-label">SERIES</div>
+      <div class="series-dots" id="series-dots">${dotsHTML}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);
+        padding:0 4px;">${_gs.seriesNum}</div>
+    </div>
+  `;
+}
+
+function _renderSpectatorSeriesDots(container) {
+  const c = container || _gs.container;
+  const dotsContainer = c.querySelector('#series-dots');
+  if (!dotsContainer) return;
+  const displayNum = _gs.seriesNum % 10;
+  let dotsHTML = '';
+  for (let i = 0; i < 10; i++) {
+    dotsHTML += `<div class="series-dot${i < displayNum ? '' : ' empty'}"></div>`;
+  }
+  dotsContainer.innerHTML = dotsHTML;
+}
+
+function _renderSpectatorGame(container) {
+  const c = container || _gs.container;
+  _renderSpectatorFieldZone(c);
+  _renderSpectatorBenchZone(c);
+}
+
+function _renderSpectatorFieldZone(container) {
+  const c = container || _gs.container;
+  const zone = c.querySelector('#field-zone');
+  if (!zone) return;
+
+  const onFieldPlayers = Object.values(_gs.players).filter(ps => ps.onField);
+  const times  = onFieldPlayers.map(ps => ps.totalOnTime + ps.currentStint);
+  const median = _median(times);
+
+  const chips = onFieldPlayers.map(ps => {
+    const p = ps.player;
+    const displayNum = p.jersey_number != null
+      ? String(p.jersey_number)
+      : p.name.slice(0, 2).toUpperCase();
+    const firstName   = p.name.split(' ')[0];
+    const total       = ps.totalOnTime + ps.currentStint;
+    const isOverTime  = median > 0 && total > median * 1.5;
+    const timeDisplay = _gs.mode === 'football'
+      ? `S${ps.currentStint}`
+      : `${Math.floor(ps.currentStint / 60)}m`;
+
+    return `
+      <div class="player-chip${isOverTime ? ' over-time' : ''}"
+        data-player-id="${p.id}"
+        ${isOverTime ? 'style="border-color:var(--orange);"' : ''}
+      >
+        <div class="player-num">${_esc(displayNum)}</div>
+        <div class="player-name-small">${isOverTime ? '⚠ ' : ''}${_esc(firstName)}</div>
+        <div class="player-mins">${_esc(timeDisplay)}</div>
+      </div>
+    `;
+  }).join('');
+
+  zone.innerHTML = `
+    <div class="zone-label">
+      ON FIELD
+      <span class="zone-count">${onFieldPlayers.length}</span>
+    </div>
+    <div class="field-grid" id="field-grid">
+      ${chips || '<div style="color:var(--muted);font-size:12px;padding:8px 0;">No players on field</div>'}
+    </div>
+  `;
+  // No click handlers — read-only spectator view
+}
+
+function _renderSpectatorBenchZone(container) {
+  const c = container || _gs.container;
+  const zone = c.querySelector('#bench-zone');
+  if (!zone) return;
+
+  const benchPlayers = Object.values(_gs.players).filter(ps => !ps.onField);
+  const isFootball   = _gs.mode === 'football';
+
+  const withBenchTime = benchPlayers.map(ps => {
+    const benchSince      = ps.benchSince !== null ? ps.benchSince : 0;
+    const ref             = isFootball ? _gs.seriesNum : _gs.timerSeconds;
+    const currentBenchTime = Math.max(0, ref - benchSince);
+    return { ps, currentBenchTime };
+  });
+
+  withBenchTime.sort((a, b) =>
+    (b.ps.totalBenchTime + b.currentBenchTime) - (a.ps.totalBenchTime + a.currentBenchTime)
+  );
+
+  const totalGameTime = isFootball ? _gs.seriesNum : _gs.timerSeconds;
+
+  const rows = withBenchTime.map(({ ps, currentBenchTime }, idx) => {
+    const p        = ps.player;
+    const initials = p.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const isNextUp = idx === 0;
+
+    let statsText, ptPct;
+    if (isFootball) {
+      statsText = `S${currentBenchTime} bench · S${ps.totalOnTime} total`;
+      ptPct = totalGameTime > 0 ? Math.round((ps.totalOnTime / totalGameTime) * 100) : 0;
+    } else {
+      const sittingMin = Math.floor(currentBenchTime / 60);
+      const totalMin   = Math.floor(ps.totalOnTime / 60);
+      statsText = `sitting ${sittingMin}m · ${totalMin}m total`;
+      ptPct = totalGameTime > 0 ? Math.round((ps.totalOnTime / totalGameTime) * 100) : 0;
+    }
+
+    ptPct = Math.min(100, Math.max(0, ptPct));
+    const fillClass = ptPct > 60 ? '' : ptPct >= 40 ? ' warn' : ' alert';
+
+    return `
+      <div class="bench-player${isNextUp ? ' next-up' : ''}" data-player-id="${p.id}">
+        <div class="bench-rank">${idx + 1}</div>
+        <div class="bench-avatar">${_esc(initials)}</div>
+        <div class="bench-info">
+          <div class="bench-name">${_esc(p.name)}</div>
+          <div class="bench-stats">${_esc(statsText)}</div>
+        </div>
+        <div class="pt-bar">
+          <div class="pt-bar-fill${fillClass}" style="width:${ptPct}%;"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  zone.innerHTML = `
+    <div class="bench-label">
+      THE BENCH
+    </div>
+    <div class="bench-list">
+      ${rows || '<div style="color:var(--muted);font-size:12px;padding:8px 0;">No players on bench</div>'}
+    </div>
+  `;
+  // No click handlers — read-only spectator view
+}
+
+function _applyEvent(event) {
+  if (!_gs) return;
+  const ps = event.player_id ? _gs.players[event.player_id] : null;
+
+  switch (event.event_type) {
+    case 'sub_on':
+      if (ps) {
+        const ts = _gs.mode === 'football' ? (event.series_num || 0) : (event.timestamp || 0);
+        ps.onField        = true;
+        ps.fieldEnteredAt = ts;
+        ps.currentStint   = 0;
+      }
+      break;
+
+    case 'sub_off':
+      if (ps) {
+        const ts = _gs.mode === 'football' ? (event.series_num || 0) : (event.timestamp || 0);
+        ps.totalOnTime   += Math.max(0, ts - (ps.fieldEnteredAt || 0));
+        ps.onField        = false;
+        ps.fieldEnteredAt = null;
+        ps.benchSince     = ts;
+        ps.currentStint   = 0;
+      }
+      break;
+
+    case 'series_advance':
+      _gs.seriesNum++;
+      for (const id of Object.keys(_gs.players)) {
+        const p = _gs.players[id];
+        if (p.onField) {
+          p.currentStint = _gs.seriesNum - (p.fieldEnteredAt || 0);
+        }
+      }
+      break;
+
+    case 'game_start':
+      // Elapsed time is re-derived from the events log; nothing extra to do here
+      break;
+
+    case 'game_pause':
+      _gs.timerSeconds = event.timestamp || 0;
+      break;
+  }
+}
+
+function _deriveElapsedSeconds() {
+  if (!_gs?.events?.length) return 0;
+
+  let elapsed          = 0;
+  let lastStartIdx     = -1;
+  let lastPauseIdx     = -1;
+
+  for (let i = 0; i < _gs.events.length; i++) {
+    const evt = _gs.events[i];
+    if (evt.event_type === 'game_start') {
+      lastStartIdx = i;
+      elapsed      = evt.timestamp || 0;
+    } else if (evt.event_type === 'game_pause') {
+      lastPauseIdx = i;
+      elapsed      = evt.timestamp || 0;
+    }
+  }
+
+  // If game is running (last start comes after last pause), derive from subsequent events
+  if (lastStartIdx > lastPauseIdx) {
+    for (let i = lastStartIdx + 1; i < _gs.events.length; i++) {
+      const ts = _gs.events[i].timestamp || 0;
+      if (ts > elapsed) elapsed = ts;
+    }
+  }
+
+  return elapsed;
+}
