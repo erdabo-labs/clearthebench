@@ -215,7 +215,7 @@ function _teamDetailHTML(team, players, season, recentGames, editorMode) {
     <div style="padding: 20px 20px 8px;">
       <button class="btn-primary" id="btn-start-game"
         ${!season ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>
-        Start Game
+        Create Game
       </button>
       ${!season ? '<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:6px;">No active season — create one first.</div>' : ''}
     </div>
