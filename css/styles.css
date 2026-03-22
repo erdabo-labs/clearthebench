@@ -1005,3 +1005,173 @@ body {
   clip: rect(0,0,0,0);
   white-space: nowrap;
 }
+
+/* ── TEAM DETAIL SCREEN ──────────────────────────────────────── */
+
+.team-detail-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 20px 20px;
+}
+.tdh-icon {
+  font-size: 40px;
+  line-height: 1;
+  filter: drop-shadow(0 0 12px rgba(168,224,99,0.2));
+}
+.tdh-info { flex: 1; }
+.tdh-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 1px;
+  line-height: 1.1;
+  margin-bottom: 6px;
+}
+.tdh-badge-row { display: flex; align-items: center; gap: 6px; }
+
+.editor-mode-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  background: rgba(240,192,64,0.15);
+  color: var(--yellow);
+}
+
+.team-detail-season {
+  margin: 0 20px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tds-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.tds-name {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+}
+.tds-games {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.team-codes-row {
+  display: flex;
+  gap: 10px;
+  margin: 0 20px 16px;
+}
+.team-code-block {
+  flex: 1;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.team-code-block:hover { border-color: var(--lime-dim); }
+.code-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.code-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--lime);
+  letter-spacing: 3px;
+  margin-bottom: 3px;
+}
+.code-hint {
+  font-size: 10px;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+
+/* ── PLAYER DETAIL ROW ───────────────────────────────────────── */
+
+.player-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.player-detail-row:last-of-type { border-bottom: none; }
+
+.pdr-info  { flex: 1; }
+.pdr-name  { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
+.pdr-jersey {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pdr-remove {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.pdr-remove:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* ── ADD PLAYER FORM ─────────────────────────────────────────── */
+
+.add-player-form {
+  padding: 12px 20px 0;
+}
+.add-player-fields {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.add-player-fields .input-field {
+  margin: 0;
+}
+
+.btn-add-player {
+  width: 40px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--lime);
+  border: none;
+  color: var(--field);
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  line-height: 1;
+}
+.btn-add-player:hover { background: #c0f070; }
+.btn-add-player:disabled { opacity: 0.5; cursor: not-allowed; }
