@@ -31,6 +31,24 @@ async function router_init() {
 
   if (gameId) {
     router_navigate('watch', { gameId });
+    history.replaceState(null, '', window.location.pathname);
+    return;
+  }
+
+  const teamCode = params.get('team');
+  if (teamCode) {
+    // Route to signin screen with editor code pre-filled
+    const coach = await auth_init();
+    router_navigate('signin', {});
+    // Pre-fill editor code input after render
+    setTimeout(() => {
+      const input = document.getElementById('editor-code-input');
+      if (input) {
+        input.value = teamCode.toUpperCase();
+        input.focus();
+      }
+    }, 50);
+    history.replaceState(null, '', window.location.pathname);
     return;
   }
 
@@ -38,6 +56,7 @@ async function router_init() {
 
   // Always start at home — home screen handles signed-in vs signed-out state
   router_navigate('home', { coach });
+  history.replaceState(null, '', window.location.pathname);
 }
 
 // Boot when DOM is ready

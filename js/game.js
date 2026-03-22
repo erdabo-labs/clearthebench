@@ -813,32 +813,50 @@ function _executeSwap(benchPlayerId, fieldPlayerId) {
 }
 
 function _shareGame() {
+  if (!_gs?.game?.id) return;
   const url = `${window.location.origin}/watch?game=${_gs.game.id}`;
+
   if (navigator.share) {
-    navigator.share({ title: 'Watch live', url });
+    navigator.share({
+      title: 'Watch live — ClearTheBench',
+      text: `Follow along with ${_gs.team.name}`,
+      url,
+    }).catch(() => {}); // user cancelled share sheet — silent
   } else {
     navigator.clipboard.writeText(url).then(() => {
       _showToast('Link copied!');
+    }).catch(() => {
+      _showToast(url); // fallback: show the URL itself
     });
   }
 }
 
 function _showToast(message) {
-  const existing = document.getElementById('share-toast');
+  const existing = document.getElementById('ctb-toast');
   if (existing) existing.remove();
 
   const toast = document.createElement('div');
-  toast.id = 'share-toast';
+  toast.id = 'ctb-toast';
   toast.textContent = message;
-  toast.style.cssText = `
-    position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
-    background:var(--card2);border:1px solid var(--border);
-    color:var(--white);font-size:13px;padding:8px 16px;
-    border-radius:8px;z-index:200;font-family:'DM Sans',sans-serif;
-    white-space:nowrap;
-  `;
+  Object.assign(toast.style, {
+    position: 'fixed',
+    bottom: 'calc(72px + var(--safe-bottom, 0px))',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: 'var(--card2)',
+    border: '1px solid var(--border)',
+    color: 'var(--white)',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '12px',
+    padding: '8px 16px',
+    borderRadius: 'var(--radius-sm)',
+    zIndex: '200',
+    whiteSpace: 'nowrap',
+    pointerEvents: 'none',
+  });
+
   document.getElementById('app').appendChild(toast);
-  setTimeout(() => toast.remove(), 2000);
+  setTimeout(() => toast.remove(), 2500);
 }
 
 function _leaveGame(screen, params) {
@@ -878,6 +896,7 @@ router_register('watch', async (container, { gameId }) => {
     </div>
   `;
 
+  // Requires anon read policy on games, game_roster, game_events
   const [game, roster, events] = await Promise.all([
     db_getGame(gameId),
     db_getGameRoster(gameId),
