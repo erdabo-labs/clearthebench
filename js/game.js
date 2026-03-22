@@ -189,8 +189,679 @@ function _rosterToggleRowHTML(player) {
   `;
 }
 
-// ── LIVE GAME (TODO) ──────────────────────────────────────────
-// router_register('game', ...) — Step 6
+// ── LIVE GAME ─────────────────────────────────────────────────
 
-// ── SPECTATOR (TODO) ─────────────────────────────────────────
+const ALERT_MINUTES = 25;
+
+let _gs = null;
+
+router_register('game', async (container, params) => {
+  const { gameId, coach, team, season } = params;
+  _gs = null;
+
+  container.innerHTML = `
+    <div class="screen">
+      <div class="screen-body" style="display:flex;align-items:center;justify-content:center;padding:40px 20px;">
+        <div style="color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:13px;">
+          Loading game...
+        </div>
+      </div>
+    </div>
+  `;
+
+  const [game, roster, events] = await Promise.all([
+    db_getGame(gameId),
+    db_getGameRoster(gameId),
+    db_getGameEvents(gameId),
+  ]);
+
+  if (!game) {
+    container.innerHTML = `
+      <div class="screen">
+        <div class="screen-body" style="display:flex;align-items:center;justify-content:center;padding:40px 20px;">
+          <div style="color:var(--red);font-size:13px;">Game not found.</div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  await _initGameState(game, roster, events, { coach, team, season });
+  _renderFullScreen(container);
+});
+
+async function _initGameState(game, roster, events, { coach, team, season }) {
+  const mode = game.mode || team.sport || 'generic';
+
+  const players = {};
+  for (const player of roster) {
+    players[player.id] = {
+      player,
+      onField: false,
+      fieldEnteredAt: null,
+      currentStint: 0,
+      totalOnTime: 0,
+      benchSince: null,
+      totalBenchTime: 0,
+    };
+  }
+
+  _gs = {
+    game,
+    team,
+    coach,
+    season,
+    roster,
+    fieldSize: game.field_size,
+    mode,
+    players,
+    timerRunning: false,
+    timerSeconds: 0,
+    timerInterval: null,
+    seriesNum: 0,
+    goalieLocked: null,
+    pendingBenchPlayer: null,
+    realtimeChannel: null,
+    container: null,
+  };
+
+  if (events.length === 0) {
+    // Auto-place first fieldSize players on field
+    const sorted = [...roster].sort((a, b) => a.name.localeCompare(b.name));
+    const fieldPlayers = sorted.slice(0, _gs.fieldSize);
+    const benchPlayers = sorted.slice(_gs.fieldSize);
+
+    for (const player of fieldPlayers) {
+      const ps = _gs.players[player.id];
+      ps.onField = true;
+      ps.fieldEnteredAt = 0;
+      ps.currentStint = 0;
+      db_insertEvent({
+        gameId: game.id,
+        playerId: player.id,
+        eventType: 'sub_on',
+        timestamp: 0,
+        seriesNum: 0,
+      });
+    }
+
+    for (const player of benchPlayers) {
+      const ps = _gs.players[player.id];
+      ps.onField = false;
+      ps.benchSince = 0;
+    }
+  } else {
+    // Reconstruct state from events
+    let lastGameStartTs = null;
+
+    for (const evt of events) {
+      if (evt.event_type === 'sub_on') {
+        const ps = _gs.players[evt.player_id];
+        if (!ps) continue;
+        const ts = mode === 'football' ? (evt.series_num || 0) : (evt.timestamp || 0);
+        ps.onField = true;
+        ps.fieldEnteredAt = ts;
+        ps.currentStint = 0;
+
+      } else if (evt.event_type === 'sub_off') {
+        const ps = _gs.players[evt.player_id];
+        if (!ps) continue;
+        const ts = mode === 'football' ? (evt.series_num || 0) : (evt.timestamp || 0);
+        ps.totalOnTime += Math.max(0, ts - (ps.fieldEnteredAt || 0));
+        ps.onField = false;
+        ps.fieldEnteredAt = null;
+        ps.benchSince = ts;
+        ps.currentStint = 0;
+
+      } else if (evt.event_type === 'game_start') {
+        lastGameStartTs = evt.timestamp || 0;
+
+      } else if (evt.event_type === 'game_pause') {
+        _gs.timerSeconds = evt.timestamp || 0;
+        lastGameStartTs = null;
+
+      } else if (evt.event_type === 'series_advance') {
+        _gs.seriesNum++;
+      }
+    }
+
+    // If game was running when we left, use last known timestamp
+    if (lastGameStartTs !== null) {
+      const lastEvt = events[events.length - 1];
+      _gs.timerSeconds = lastEvt.timestamp || 0;
+    }
+
+    // Update currentStint for players currently on field
+    for (const id of Object.keys(_gs.players)) {
+      const ps = _gs.players[id];
+      if (ps.onField) {
+        if (mode === 'football') {
+          ps.currentStint = _gs.seriesNum - (ps.fieldEnteredAt || 0);
+        } else {
+          ps.currentStint = Math.max(0, _gs.timerSeconds - (ps.fieldEnteredAt || 0));
+        }
+      }
+    }
+
+    // Settle bench times for players currently on bench
+    for (const id of Object.keys(_gs.players)) {
+      const ps = _gs.players[id];
+      if (!ps.onField && ps.benchSince !== null) {
+        const ref = mode === 'football' ? _gs.seriesNum : _gs.timerSeconds;
+        ps.totalBenchTime += Math.max(0, ref - ps.benchSince);
+        ps.benchSince = ref;
+      }
+    }
+  }
+}
+
+function _renderFullScreen(container) {
+  _gs.container = container;
+  const game = _gs.game;
+  const title = game.opponent
+    ? `vs ${_esc(game.opponent)}`
+    : _esc(_gs.team.short_code || _gs.team.name);
+
+  container.innerHTML = `
+    <div class="screen">
+      <div class="game-header">
+        <div class="game-meta">
+          <div class="game-title">${title}</div>
+          ${_gs.mode !== 'football' ? `
+            <div class="game-clock" id="game-clock">
+              <div class="clock-dot"></div>
+              <span id="clock-text">${_formatTime(_gs.timerSeconds)}</span>
+            </div>
+          ` : ''}
+        </div>
+        ${_gs.mode === 'football' ? _seriesBarHTML() : _timerControlHTML()}
+      </div>
+      <div class="screen-body" id="game-body">
+        <div class="field-zone" id="field-zone"></div>
+        <div class="bench-zone" id="bench-zone"></div>
+      </div>
+      <div class="bottom-nav">
+        <div class="nav-item active" id="nav-game">
+          <div class="nav-icon">🏟</div>
+          <div class="nav-label">GAME</div>
+        </div>
+        <div class="nav-item" id="nav-stats">
+          <div class="nav-icon">📊</div>
+          <div class="nav-label">STATS</div>
+        </div>
+        <div class="nav-item" id="nav-roster">
+          <div class="nav-icon">👥</div>
+          <div class="nav-label">ROSTER</div>
+        </div>
+        <div class="nav-item" id="nav-share">
+          <div class="nav-icon">🔗</div>
+          <div class="nav-label">SHARE</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  _renderGame(container);
+  _bindGameEvents(container);
+}
+
+function _timerControlHTML() {
+  return `
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+      <button id="btn-timer-toggle" style="
+        background:var(--card2);border:1px solid var(--border);border-radius:6px;
+        padding:4px 10px;color:var(--white);font-size:14px;cursor:pointer;
+      ">${_gs.timerRunning ? '⏸' : '▶'}</button>
+      <span id="timer-status" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);">
+        ${_gs.timerRunning ? 'RUNNING' : 'PAUSED'}
+      </span>
+    </div>
+  `;
+}
+
+function _seriesBarHTML() {
+  const displayNum = _gs.seriesNum % 10;
+  let dotsHTML = '';
+  for (let i = 0; i < 10; i++) {
+    dotsHTML += `<div class="series-dot${i < displayNum ? '' : ' empty'}"></div>`;
+  }
+  return `
+    <div class="series-bar">
+      <div class="series-label">SERIES</div>
+      <div class="series-dots" id="series-dots">${dotsHTML}</div>
+      <button class="series-btn" id="btn-next-series">NEXT SERIES</button>
+    </div>
+  `;
+}
+
+function _renderGame(container) {
+  const c = container || _gs.container;
+  _renderFieldZone(c);
+  _renderBenchZone(c);
+}
+
+function _renderFieldZone(container) {
+  const c = container || _gs.container;
+  const zone = c.querySelector('#field-zone');
+  if (!zone) return;
+
+  const onFieldPlayers = Object.values(_gs.players).filter(ps => ps.onField);
+  const times = onFieldPlayers.map(ps => ps.totalOnTime + ps.currentStint);
+  const median = _median(times);
+
+  const chips = onFieldPlayers.map(ps => {
+    const p = ps.player;
+    const displayNum = p.jersey_number != null
+      ? String(p.jersey_number)
+      : p.name.slice(0, 2).toUpperCase();
+    const firstName = p.name.split(' ')[0];
+    const total = ps.totalOnTime + ps.currentStint;
+    const isOverTime = median > 0 && total > median * 1.5;
+    const timeDisplay = _gs.mode === 'football'
+      ? `S${ps.currentStint}`
+      : `${Math.floor(ps.currentStint / 60)}m`;
+
+    return `
+      <div class="player-chip${isOverTime ? ' over-time' : ''}"
+        data-player-id="${p.id}"
+        ${isOverTime ? 'style="border-color:var(--orange);"' : ''}
+      >
+        <div class="player-num">${_esc(displayNum)}</div>
+        <div class="player-name-small">${isOverTime ? '⚠ ' : ''}${_esc(firstName)}</div>
+        <div class="player-mins">${_esc(timeDisplay)}</div>
+      </div>
+    `;
+  }).join('');
+
+  zone.innerHTML = `
+    <div class="zone-label">
+      ON FIELD
+      <span class="zone-count">${onFieldPlayers.length}</span>
+    </div>
+    <div class="field-grid" id="field-grid">
+      ${chips || '<div style="color:var(--muted);font-size:12px;padding:8px 0;">No players on field</div>'}
+    </div>
+  `;
+
+  zone.querySelectorAll('.player-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const playerId = chip.dataset.playerId;
+      if (_gs.pendingBenchPlayer && playerId) {
+        _executeSwap(_gs.pendingBenchPlayer, playerId);
+      }
+    });
+  });
+}
+
+function _renderBenchZone(container) {
+  const c = container || _gs.container;
+  const zone = c.querySelector('#bench-zone');
+  if (!zone) return;
+
+  const benchPlayers = Object.values(_gs.players).filter(ps => !ps.onField);
+  const isFootball = _gs.mode === 'football';
+
+  const withBenchTime = benchPlayers.map(ps => {
+    const benchSince = ps.benchSince !== null ? ps.benchSince : 0;
+    const ref = isFootball ? _gs.seriesNum : _gs.timerSeconds;
+    const currentBenchTime = Math.max(0, ref - benchSince);
+    return { ps, currentBenchTime };
+  });
+
+  withBenchTime.sort((a, b) =>
+    (b.ps.totalBenchTime + b.currentBenchTime) - (a.ps.totalBenchTime + a.currentBenchTime)
+  );
+
+  const totalGameTime = isFootball ? _gs.seriesNum : _gs.timerSeconds;
+
+  const rows = withBenchTime.map(({ ps, currentBenchTime }, idx) => {
+    const p = ps.player;
+    const initials = p.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const isNextUp = idx === 0;
+
+    let statsText, ptPct;
+    if (isFootball) {
+      statsText = `S${currentBenchTime} bench · S${ps.totalOnTime} total`;
+      ptPct = totalGameTime > 0 ? Math.round((ps.totalOnTime / totalGameTime) * 100) : 0;
+    } else {
+      const sittingMin = Math.floor(currentBenchTime / 60);
+      const totalMin = Math.floor(ps.totalOnTime / 60);
+      statsText = `sitting ${sittingMin}m · ${totalMin}m total`;
+      ptPct = totalGameTime > 0 ? Math.round((ps.totalOnTime / totalGameTime) * 100) : 0;
+    }
+
+    ptPct = Math.min(100, Math.max(0, ptPct));
+    const fillClass = ptPct > 60 ? '' : ptPct >= 40 ? ' warn' : ' alert';
+
+    return `
+      <div class="bench-player${isNextUp ? ' next-up' : ''}" data-player-id="${p.id}">
+        <div class="bench-rank">${idx + 1}</div>
+        <div class="bench-avatar">${_esc(initials)}</div>
+        <div class="bench-info">
+          <div class="bench-name">${_esc(p.name)}</div>
+          <div class="bench-stats">${_esc(statsText)}</div>
+        </div>
+        <div class="pt-bar">
+          <div class="pt-bar-fill${fillClass}" style="width:${ptPct}%;"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  zone.innerHTML = `
+    <div class="bench-label">
+      THE BENCH
+      <span class="queue-hint">tap to sub in</span>
+    </div>
+    <div class="bench-list">
+      ${rows || '<div style="color:var(--muted);font-size:12px;padding:8px 0;">No players on bench</div>'}
+    </div>
+  `;
+
+  zone.querySelectorAll('.bench-player').forEach(row => {
+    row.addEventListener('click', () => {
+      const playerId = row.dataset.playerId;
+      if (playerId) _openSwapModal(playerId);
+    });
+  });
+}
+
+function _renderClock(container) {
+  const c = container || _gs.container;
+  const clockText = c.querySelector('#clock-text');
+  if (clockText) clockText.textContent = _formatTime(_gs.timerSeconds);
+}
+
+function _bindGameEvents(container) {
+  const timerBtn = container.querySelector('#btn-timer-toggle');
+  if (timerBtn) {
+    timerBtn.addEventListener('click', () => _toggleTimer(container));
+  }
+
+  const seriesBtn = container.querySelector('#btn-next-series');
+  if (seriesBtn) {
+    seriesBtn.addEventListener('click', () => _advanceSeries(container));
+  }
+
+  container.querySelector('#nav-stats')?.addEventListener('click', () => {
+    _leaveGame('stats', { coach: _gs.coach, team: _gs.team, season: _gs.season });
+  });
+  container.querySelector('#nav-roster')?.addEventListener('click', () => {
+    _leaveGame('team', { coach: _gs.coach, team: _gs.team, season: _gs.season });
+  });
+  container.querySelector('#nav-share')?.addEventListener('click', () => {
+    _shareGame();
+  });
+}
+
+function _toggleTimer(container) {
+  if (_gs.timerRunning) {
+    clearInterval(_gs.timerInterval);
+    _gs.timerInterval = null;
+    _gs.timerRunning = false;
+    db_insertEvent({
+      gameId: _gs.game.id,
+      playerId: null,
+      eventType: 'game_pause',
+      timestamp: _gs.timerSeconds,
+      seriesNum: _gs.seriesNum,
+    });
+  } else {
+    _gs.timerRunning = true;
+    db_insertEvent({
+      gameId: _gs.game.id,
+      playerId: null,
+      eventType: 'game_start',
+      timestamp: _gs.timerSeconds,
+      seriesNum: _gs.seriesNum,
+    });
+    _gs.timerInterval = setInterval(() => {
+      _gs.timerSeconds++;
+
+      for (const id of Object.keys(_gs.players)) {
+        const ps = _gs.players[id];
+        if (ps.onField) ps.currentStint++;
+      }
+
+      _renderClock(_gs.container);
+      _renderBenchZone(_gs.container);
+
+      if (_gs.timerSeconds === ALERT_MINUTES * 60) {
+        if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+        try {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          audioCtx.resume().then(() => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.value = 880;
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.3);
+          });
+        } catch (e) {
+          // iOS audio restriction — ignore
+        }
+        const appEl = document.getElementById('app');
+        if (appEl) {
+          appEl.classList.add('timer-flash');
+          setTimeout(() => appEl.classList.remove('timer-flash'), 600);
+        }
+      }
+    }, 1000);
+  }
+
+  const btn = container.querySelector('#btn-timer-toggle');
+  if (btn) btn.textContent = _gs.timerRunning ? '⏸' : '▶';
+  const statusEl = container.querySelector('#timer-status');
+  if (statusEl) statusEl.textContent = _gs.timerRunning ? 'RUNNING' : 'PAUSED';
+}
+
+function _advanceSeries(container) {
+  _gs.seriesNum++;
+
+  db_insertEvent({
+    gameId: _gs.game.id,
+    playerId: null,
+    eventType: 'series_advance',
+    timestamp: _gs.timerSeconds,
+    seriesNum: _gs.seriesNum,
+  });
+
+  for (const id of Object.keys(_gs.players)) {
+    const ps = _gs.players[id];
+    if (ps.onField) {
+      ps.currentStint = _gs.seriesNum - (ps.fieldEnteredAt || 0);
+    }
+  }
+
+  const dotsContainer = container.querySelector('#series-dots');
+  if (dotsContainer) {
+    const displayNum = _gs.seriesNum % 10;
+    let dotsHTML = '';
+    for (let i = 0; i < 10; i++) {
+      dotsHTML += `<div class="series-dot${i < displayNum ? '' : ' empty'}"></div>`;
+    }
+    dotsContainer.innerHTML = dotsHTML;
+  }
+
+  _renderBenchZone(container);
+}
+
+function _openSwapModal(benchPlayerId) {
+  _gs.pendingBenchPlayer = benchPlayerId;
+  const benchPs = _gs.players[benchPlayerId];
+  if (!benchPs) return;
+
+  const onFieldSorted = Object.values(_gs.players)
+    .filter(ps => ps.onField)
+    .sort((a, b) => (b.totalOnTime + b.currentStint) - (a.totalOnTime + a.currentStint));
+
+  const playerRows = onFieldSorted.map((ps, idx) => {
+    const p = ps.player;
+    const initials = p.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const timeDisplay = _gs.mode === 'football'
+      ? `S${ps.currentStint}`
+      : `${Math.floor(ps.currentStint / 60)}m ${ps.currentStint % 60}s`;
+    const isLongest = idx === 0;
+
+    return `
+      <div class="swap-player" data-player-id="${p.id}"
+        ${isLongest ? 'style="border-color:var(--orange);"' : ''}>
+        <div class="bench-avatar">${_esc(initials)}</div>
+        <div class="swap-player-name">${_esc(p.name)}</div>
+        <div class="swap-player-time">${_esc(timeDisplay)}</div>
+      </div>
+    `;
+  }).join('');
+
+  const longestId = onFieldSorted.length > 0 ? onFieldSorted[0].player.id : null;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'swap-modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-title">Sub In ${_esc(benchPs.player.name)}</div>
+      <div class="modal-sub">Select a field player to replace — sorted by time on</div>
+      <div class="swap-player-list">
+        ${playerRows}
+      </div>
+      ${longestId ? `
+        <button class="btn-orange" id="btn-sub-now">SUB NOW</button>
+      ` : ''}
+      <div class="swap-cancel" id="swap-cancel">Cancel</div>
+    </div>
+  `;
+
+  document.getElementById('app').appendChild(overlay);
+
+  overlay.querySelectorAll('.swap-player').forEach(row => {
+    row.addEventListener('click', () => {
+      const fieldPlayerId = row.dataset.playerId;
+      _closeSwapModal();
+      _executeSwap(benchPlayerId, fieldPlayerId);
+    });
+  });
+
+  overlay.querySelector('#btn-sub-now')?.addEventListener('click', () => {
+    if (longestId) {
+      _closeSwapModal();
+      _executeSwap(benchPlayerId, longestId);
+    }
+  });
+
+  overlay.querySelector('#swap-cancel')?.addEventListener('click', () => {
+    _gs.pendingBenchPlayer = null;
+    _closeSwapModal();
+  });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      _gs.pendingBenchPlayer = null;
+      _closeSwapModal();
+    }
+  });
+}
+
+function _closeSwapModal() {
+  const overlay = document.getElementById('swap-modal-overlay');
+  if (overlay) overlay.remove();
+}
+
+function _executeSwap(benchPlayerId, fieldPlayerId) {
+  const benchPs = _gs.players[benchPlayerId];
+  const fieldPs = _gs.players[fieldPlayerId];
+  if (!benchPs || !fieldPs) return;
+
+  const now = _gs.mode === 'football' ? _gs.seriesNum : _gs.timerSeconds;
+
+  // Take field player off
+  fieldPs.totalOnTime += fieldPs.currentStint;
+  fieldPs.onField = false;
+  fieldPs.benchSince = now;
+  fieldPs.currentStint = 0;
+  db_insertEvent({
+    gameId: _gs.game.id,
+    playerId: fieldPlayerId,
+    eventType: 'sub_off',
+    timestamp: _gs.timerSeconds,
+    seriesNum: _gs.seriesNum,
+  });
+
+  // Put bench player on field
+  benchPs.totalBenchTime += benchPs.benchSince !== null
+    ? Math.max(0, now - benchPs.benchSince)
+    : 0;
+  benchPs.onField = true;
+  benchPs.fieldEnteredAt = now;
+  benchPs.currentStint = 0;
+  benchPs.benchSince = null;
+  db_insertEvent({
+    gameId: _gs.game.id,
+    playerId: benchPlayerId,
+    eventType: 'sub_on',
+    timestamp: _gs.timerSeconds,
+    seriesNum: _gs.seriesNum,
+  });
+
+  _gs.pendingBenchPlayer = null;
+  _renderGame(_gs.container);
+}
+
+function _shareGame() {
+  const url = `${window.location.origin}/watch?game=${_gs.game.id}`;
+  if (navigator.share) {
+    navigator.share({ title: 'Watch live', url });
+  } else {
+    navigator.clipboard.writeText(url).then(() => {
+      _showToast('Link copied!');
+    });
+  }
+}
+
+function _showToast(message) {
+  const existing = document.getElementById('share-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'share-toast';
+  toast.textContent = message;
+  toast.style.cssText = `
+    position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+    background:var(--card2);border:1px solid var(--border);
+    color:var(--white);font-size:13px;padding:8px 16px;
+    border-radius:8px;z-index:200;font-family:'DM Sans',sans-serif;
+    white-space:nowrap;
+  `;
+  document.getElementById('app').appendChild(toast);
+  setTimeout(() => toast.remove(), 2000);
+}
+
+function _leaveGame(screen, params) {
+  if (_gs?.timerInterval) clearInterval(_gs.timerInterval);
+  if (_gs?.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+  _gs = null;
+  router_navigate(screen, params);
+}
+
+function _formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function _median(arr) {
+  if (!arr.length) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0
+    ? sorted[mid]
+    : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// ── SPECTATOR (TODO) — Step 7 ─────────────────────────────────
 // router_register('watch', ...) — Step 7
