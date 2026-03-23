@@ -269,10 +269,14 @@ function _teamDetailHTML(team, players, season, seasons, recentGames, editorMode
         <div class="code-hint">Used in share links</div>
       </div>
     </div>
-    <div style="padding: 0 20px 8px;">
+    <div style="padding: 0 20px 8px;display:flex;gap:8px;">
       <button class="btn-ghost" id="btn-new-season"
         style="font-size:12px;padding:6px 14px;color:var(--muted);">
         + New Season
+      </button>
+      <button class="btn-ghost" id="btn-delete-team"
+        style="font-size:12px;padding:6px 14px;color:var(--red);">
+        Delete Team
       </button>
     </div>
   ` : '';
@@ -618,6 +622,20 @@ function _bindTeamDetail(container, coach, team, players, season, seasons, edito
       router_navigate('team', { coach, team, season: newSeason });
     } else {
       if (btn) btn.textContent = '+ New Season';
+    }
+  });
+
+  // Delete team
+  container.querySelector('#btn-delete-team')?.addEventListener('click', async () => {
+    if (!confirm(`Delete "${team.name}" and all its data? This cannot be undone.`)) return;
+    const btn = container.querySelector('#btn-delete-team');
+    if (btn) { btn.textContent = 'Deleting...'; btn.disabled = true; }
+    const ok = await db_deleteTeam(team.id);
+    if (ok) {
+      router_navigate('home', { coach });
+    } else {
+      if (btn) { btn.textContent = 'Delete Team'; btn.disabled = false; }
+      alert('Failed to delete team. Try again.');
     }
   });
 

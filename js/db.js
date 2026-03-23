@@ -488,6 +488,40 @@ async function db_getSeasonGamesAll(seasonId) {
   return data;
 }
 
+async function db_deleteGame(gameId) {
+  await _db.from('game_events').delete().eq('game_id', gameId);
+  await _db.from('position_log').delete().eq('game_id', gameId);
+  await _db.from('game_roster').delete().eq('game_id', gameId);
+  const { error } = await _db.from('games').delete().eq('id', gameId);
+  if (error) { console.error('db_deleteGame', error); return false; }
+  return true;
+}
+
+async function db_deleteTeam(teamId) {
+  const { data: seasons } = await _db.from('seasons').select('id').eq('team_id', teamId);
+  const seasonIds = (seasons || []).map(s => s.id);
+
+  if (seasonIds.length > 0) {
+    const { data: games } = await _db.from('games').select('id').in('season_id', seasonIds);
+    const gameIds = (games || []).map(g => g.id);
+
+    if (gameIds.length > 0) {
+      await _db.from('game_events').delete().in('game_id', gameIds);
+      await _db.from('position_log').delete().in('game_id', gameIds);
+      await _db.from('game_roster').delete().in('game_id', gameIds);
+      await _db.from('games').delete().in('id', gameIds);
+    }
+    await _db.from('seasons').delete().in('id', seasonIds);
+  }
+
+  await _db.from('players').delete().eq('team_id', teamId);
+  await _db.from('team_strategy').delete().eq('team_id', teamId);
+
+  const { error } = await _db.from('teams').delete().eq('id', teamId);
+  if (error) { console.error('db_deleteTeam', error); return false; }
+  return true;
+}
+
 // ── HELPERS ───────────────────────────────────────────────────
 
 function _generateCode(length) {
