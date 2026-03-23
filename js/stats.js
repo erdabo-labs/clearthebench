@@ -293,7 +293,13 @@ router_register('game-history', async (container, { coach, team, season }) => {
           <div class="team-name">${oppLabel}</div>
           <div class="team-meta">${meta}</div>
         </div>
-        <div class="team-badge ${badgeClass}">${badgeLabel}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="team-badge ${badgeClass}">${badgeLabel}</div>
+          <button class="btn-ghost game-history-delete" data-game-id="${game.id}"
+            style="font-size:11px;padding:3px 8px;color:var(--red);min-width:0;flex-shrink:0;">
+            ✕
+          </button>
+        </div>
       </div>
     `;
   }).join('');
@@ -337,6 +343,24 @@ router_register('game-history', async (container, { coach, team, season }) => {
         router_navigate('game-summary', { gameId, coach, team, season });
       } else {
         router_navigate('create-game', { coach, team, season });
+      }
+    });
+  });
+
+  container.querySelectorAll('.game-history-delete').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const gameId = btn.dataset.gameId;
+      if (!confirm('Delete this game and all its data? This cannot be undone.')) return;
+      btn.textContent = '…';
+      btn.disabled = true;
+      const ok = await db_deleteGame(gameId);
+      if (ok) {
+        btn.closest('.game-history-row')?.remove();
+      } else {
+        btn.textContent = '✕';
+        btn.disabled = false;
+        alert('Failed to delete game. Try again.');
       }
     });
   });
