@@ -435,6 +435,22 @@ async function db_setSeasonInactive(seasonId) {
   return db_updateSeason(seasonId, { active: false });
 }
 
+async function db_deleteSeason(seasonId) {
+  const { data: games } = await _db.from('games').select('id').eq('season_id', seasonId);
+  const gameIds = (games || []).map(g => g.id);
+
+  if (gameIds.length > 0) {
+    await _db.from('game_events').delete().in('game_id', gameIds);
+    await _db.from('position_log').delete().in('game_id', gameIds);
+    await _db.from('game_roster').delete().in('game_id', gameIds);
+    await _db.from('games').delete().in('id', gameIds);
+  }
+
+  const { error } = await _db.from('seasons').delete().eq('id', seasonId);
+  if (error) { console.error('db_deleteSeason', error); return false; }
+  return true;
+}
+
 async function db_getSeasons(teamId) {
   const { data, error } = await _db
     .from('seasons')
