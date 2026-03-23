@@ -246,16 +246,18 @@ async function db_getGameRoster(gameId) {
 // ── GAME EVENTS ───────────────────────────────────────────────
 
 async function db_insertEvent({ gameId, playerId, eventType, timestamp, seriesNum, meta }) {
+  const row = {
+    game_id: gameId,
+    event_type: eventType,
+    timestamp,
+    series_num: seriesNum || null,
+    meta: meta || {},
+  };
+  if (playerId != null) row.player_id = playerId;
+
   const { data, error } = await _db
     .from('game_events')
-    .insert({
-      game_id: gameId,
-      player_id: playerId,
-      event_type: eventType,
-      timestamp,
-      series_num: seriesNum || null,
-      meta: meta || {},
-    })
+    .insert(row)
     .select()
     .single();
 
