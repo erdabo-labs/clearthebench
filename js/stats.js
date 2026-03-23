@@ -293,10 +293,11 @@ router_register('game-history', async (container, { coach, team, season }) => {
           <div class="team-name">${oppLabel}</div>
           <div class="team-meta">${meta}</div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
           <div class="team-badge ${badgeClass}">${badgeLabel}</div>
-          <button class="btn-ghost game-history-delete" data-game-id="${game.id}"
-            style="font-size:11px;padding:3px 8px;color:var(--red);min-width:0;flex-shrink:0;">
+          <button class="game-history-delete" data-game-id="${game.id}"
+            style="background:none;border:none;color:var(--red);font-size:16px;
+              line-height:1;padding:4px 6px;cursor:pointer;opacity:0.6;flex-shrink:0;">
             ✕
           </button>
         </div>

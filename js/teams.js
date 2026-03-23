@@ -58,7 +58,7 @@ router_register('team', async (container, { coach, team, editorMode, fromScreen,
 
   const [players, season, seasons] = await Promise.all([
     db_getPlayers(team.id),
-    db_getActiveSeason(team.id),
+    _prevSeason ? Promise.resolve(_prevSeason) : db_getActiveSeason(team.id),
     !editorMode ? db_getSeasons(team.id) : Promise.resolve([]),
   ]);
 
@@ -269,13 +269,17 @@ function _teamDetailHTML(team, players, season, seasons, recentGames, editorMode
         <div class="code-hint">Used in share links</div>
       </div>
     </div>
-    <div style="padding: 0 20px 8px;display:flex;gap:8px;">
+    <div style="padding: 0 20px 8px;display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn-ghost" id="btn-new-season"
-        style="font-size:12px;padding:6px 14px;color:var(--muted);">
+        style="font-size:12px;padding:6px 14px;color:var(--muted);width:auto;">
         + New Season
       </button>
+      ${season ? `<button class="btn-ghost" id="btn-delete-season"
+        style="font-size:12px;padding:6px 14px;color:var(--red);width:auto;">
+        Delete Season
+      </button>` : ''}
       <button class="btn-ghost" id="btn-delete-team"
-        style="font-size:12px;padding:6px 14px;color:var(--red);">
+        style="font-size:12px;padding:6px 14px;color:var(--red);width:auto;">
         Delete Team
       </button>
     </div>
@@ -622,6 +626,26 @@ function _bindTeamDetail(container, coach, team, players, season, seasons, edito
       router_navigate('team', { coach, team, season: newSeason });
     } else {
       if (btn) btn.textContent = '+ New Season';
+    }
+  });
+
+  // Delete season
+  container.querySelector('#btn-delete-season')?.addEventListener('click', async () => {
+    if (!season) return;
+    if (!confirm(`Delete "${season.name}" and all its games? This cannot be undone.`)) return;
+    const btn = container.querySelector('#btn-delete-season');
+    if (btn) { btn.textContent = 'Deleting...'; btn.disabled = true; }
+    const ok = await db_deleteSeason(season.id);
+    if (ok) {
+      // Navigate to team; pick next available season or none
+      const remaining = seasons.filter(s => s.id !== season.id);
+      const next = remaining[0] || null;
+      // Mark next season active if one exists
+      if (next) await db_updateSeason(next.id, { active: true });
+      router_navigate('team', { coach, team, season: next });
+    } else {
+      if (btn) { btn.textContent = 'Delete Season'; btn.disabled = false; }
+      alert('Failed to delete season. Try again.');
     }
   });
 
