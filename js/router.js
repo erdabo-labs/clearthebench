@@ -10,6 +10,7 @@ function router_register(name, renderFn) {
 }
 
 function router_navigate(name, params = {}) {
+  if (!name) { console.warn('router_navigate called with no screen name'); return; }
   const container = document.getElementById('screen-container');
   if (!container) return;
 
