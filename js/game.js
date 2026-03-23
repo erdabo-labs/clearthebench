@@ -946,13 +946,13 @@ function _fireAlert() {
   }
 }
 
-function _endGame() {
+async function _endGame() {
   if (_gs.timerRunning) {
     clearInterval(_gs.timerInterval);
     _gs.timerInterval = null;
     _gs.timerRunning = false;
   }
-  db_insertEvent({
+  await db_insertEvent({
     gameId: _gs.game.id,
     playerId: null,
     eventType: 'game_end',
