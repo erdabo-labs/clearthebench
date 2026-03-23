@@ -445,6 +445,37 @@ async function db_getSeasons(teamId) {
 
 // ── ALL SEASON GAMES (for history) ────────────────────────────
 
+async function db_getSeasonGamesWithStatus(seasonId) {
+  const { data, error } = await _db
+    .from('games')
+    .select(`
+      id, date, opponent, mode, created_at,
+      game_events(event_type, timestamp)
+    `)
+    .eq('season_id', seasonId)
+    .order('created_at', { ascending: false });
+
+  if (error) { console.error('db_getSeasonGamesWithStatus', error); return []; }
+
+  return (data || []).map(game => {
+    const events  = game.game_events || [];
+    const hasStart = events.some(e => e.event_type === 'game_start');
+    const hasEnd   = events.some(e => e.event_type === 'game_end');
+    const startEvt = events.find(e => e.event_type === 'game_start');
+    const endEvt   = events.find(e => e.event_type === 'game_end');
+
+    let durationMins = null;
+    if (startEvt && endEvt) {
+      durationMins = Math.floor(((endEvt.timestamp || 0) - (startEvt.timestamp || 0)) / 60);
+    }
+
+    const subCount = events.filter(e => e.event_type === 'sub_on').length;
+    const status   = !hasStart ? 'not_started' : !hasEnd ? 'active' : 'final';
+
+    return { ...game, status, durationMins, subCount };
+  });
+}
+
 async function db_getSeasonGamesAll(seasonId) {
   const { data, error } = await _db
     .from('games')

@@ -666,7 +666,13 @@ function _toggleTimer(container) {
       }
 
       _renderClock(_gs.container);
-      _renderBenchZone(_gs.container);
+
+      // Re-render player zones every 15 s — avoids per-second flicker
+      // while keeping displays fresh enough for coaching
+      if (_gs.timerSeconds % 15 === 0) {
+        _renderFieldZone(_gs.container);
+        _renderBenchZone(_gs.container);
+      }
 
       // 25-minute halftime alert
       if (_gs.timerSeconds === ALERT_MINUTES * 60) {
@@ -1120,6 +1126,10 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
     router_navigate('team', { coach, team, season });
   });
 });
+
+function _initials(name) {
+  return String(name).split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
+}
 
 function _formatTime(seconds) {
   const m = Math.floor(seconds / 60);

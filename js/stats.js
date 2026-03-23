@@ -240,7 +240,7 @@ function _statsHTML(coach, team, season, stats, activeGame) {
 function _bindStats(container, coach, team, season, activeGame) {
   // Back passes fromStats so team detail back-button returns here
   container.querySelector('#btn-back')?.addEventListener('click', () => {
-    router_navigate('team', { coach, team, season, fromStats: true });
+    router_navigate('team', { coach, team, season, fromScreen: 'stats' });
   });
 
   if (activeGame) {
@@ -250,7 +250,7 @@ function _bindStats(container, coach, team, season, activeGame) {
   }
 
   container.querySelector('#nav-roster')?.addEventListener('click', () => {
-    router_navigate('team', { coach, team, season, fromStats: true });
+    router_navigate('team', { coach, team, season, fromScreen: 'stats' });
   });
 }
 
@@ -271,48 +271,29 @@ router_register('game-history', async (container, { coach, team, season }) => {
     </div>
   `;
 
-  const games = await db_getSeasonGamesAll(season.id);
+  const games = await db_getSeasonGamesWithStatus(season.id);
 
   const rows = games.map(game => {
-    const events = game.game_events || [];
-    const hasStart = events.some(e => e.event_type === 'game_start');
-    const hasEnd = events.some(e => e.event_type === 'game_end');
-    const isActive = events.length > 0 && !hasEnd;
-    const isFinal = hasEnd;
+    const isActive  = game.status === 'active';
+    const isFinal   = game.status === 'final';
+    const dateLabel = new Date(game.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const oppLabel  = game.opponent ? `vs ${_esc(game.opponent)}` : '—';
+    const durStr    = game.durationMins != null ? ` · ${game.durationMins}m` : '';
+    const meta      = `${dateLabel} · ${game.subCount} subs${durStr}`;
 
-    const startEvt = events.find(e => e.event_type === 'game_start');
-    const endEvt = events.find(e => e.event_type === 'game_end');
-    let durationLabel = '—';
-    if (startEvt && endEvt) {
-      const diffSec = Math.max(0, (endEvt.timestamp || 0) - (startEvt.timestamp || 0));
-      durationLabel = `${Math.floor(diffSec / 60)}m`;
-    }
-
-    const subCount = events.filter(e => e.event_type === 'sub_on').length;
-    const dateLabel = game.date
-      ? new Date(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      : 'Unknown date';
-    const oppLabel = game.opponent ? `vs ${_esc(game.opponent)}` : '—';
-    const statusBadge = isActive
-      ? `<span style="color:var(--lime);font-size:11px;font-family:'JetBrains Mono',monospace;">● ACTIVE</span>`
-      : isFinal
-      ? `<span style="color:var(--muted);font-size:11px;font-family:'JetBrains Mono',monospace;">FINAL</span>`
-      : `<span style="color:var(--muted);font-size:11px;font-family:'JetBrains Mono',monospace;">NOT STARTED</span>`;
+    const statusEmoji = isActive ? '●' : isFinal ? '✓' : '○';
+    const badgeClass  = isActive ? 'badge-soccer' : 'badge-generic';
+    const badgeLabel  = isActive ? 'LIVE' : isFinal ? 'FINAL' : 'SETUP';
 
     return `
-      <div class="player-detail-row game-history-row"
-        data-game-id="${game.id}"
-        data-is-active="${isActive}"
-        style="padding: 12px 20px; cursor: pointer; align-items: flex-start; gap: 12px;">
-        <div style="flex:1;">
-          <div style="font-size:14px;color:var(--white);margin-bottom:3px;">
-            ${oppLabel}
-          </div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">
-            ${dateLabel} · ${durationLabel} · ${subCount} subs
-          </div>
+      <div class="team-card game-history-row" data-game-id="${game.id}" data-status="${game.status}"
+        style="cursor:pointer;">
+        <div class="team-icon">${statusEmoji}</div>
+        <div class="team-info">
+          <div class="team-name">${oppLabel}</div>
+          <div class="team-meta">${meta}</div>
         </div>
-        <div style="flex-shrink:0;padding-top:2px;">${statusBadge}</div>
+        <div class="team-badge ${badgeClass}">${badgeLabel}</div>
       </div>
     `;
   }).join('');
@@ -329,12 +310,14 @@ router_register('game-history', async (container, { coach, team, season }) => {
           <div class="stats-season">${_esc(season.name)}</div>
         </div>
         <div class="divider"></div>
-        ${rows || `
-          <div style="text-align:center;padding:48px 16px;color:var(--muted);">
-            <div style="font-size:32px;margin-bottom:12px;">🏟️</div>
-            <div style="font-size:14px;">No games yet this season.</div>
-          </div>
-        `}
+        <div style="padding: 0 20px;">
+          ${rows || `
+            <div style="text-align:center;padding:48px 0;color:var(--muted);">
+              <div style="font-size:32px;margin-bottom:12px;">📋</div>
+              <div style="font-size:14px;">No games this season yet.</div>
+            </div>
+          `}
+        </div>
         <div style="height:32px;"></div>
       </div>
     </div>
@@ -347,11 +330,13 @@ router_register('game-history', async (container, { coach, team, season }) => {
   container.querySelectorAll('.game-history-row').forEach(row => {
     row.addEventListener('click', () => {
       const gameId = row.dataset.gameId;
-      const isActive = row.dataset.isActive === 'true';
-      if (isActive) {
+      const status = row.dataset.status;
+      if (status === 'active') {
         router_navigate('game', { gameId, coach, team, season });
-      } else {
+      } else if (status === 'final') {
         router_navigate('game-summary', { gameId, coach, team, season });
+      } else {
+        router_navigate('create-game', { coach, team, season });
       }
     });
   });

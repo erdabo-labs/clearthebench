@@ -5,6 +5,14 @@
 // ── HOME SCREEN ───────────────────────────────────────────────
 
 router_register('home', async (container, { coach } = {}) => {
+  // Editor mode — bypass signed-out home, navigate directly to their team
+  const editorTeam = auth_getEditorTeam();
+  if (!coach && editorTeam) {
+    container.innerHTML = _homeLoading();
+    router_navigate('team', { team: editorTeam, editorMode: true });
+    return;
+  }
+
   if (!coach) {
     container.innerHTML = _homeSignedOut();
     _bindHomeSignedOut(container);
@@ -45,7 +53,7 @@ router_register('create-team', (container, { coach }) => {
 
 // ── TEAM DETAIL SCREEN ────────────────────────────────────────
 
-router_register('team', async (container, { coach, team, editorMode, fromStats, season: _prevSeason } = {}) => {
+router_register('team', async (container, { coach, team, editorMode, fromScreen, season: _prevSeason } = {}) => {
   container.innerHTML = _teamLoading(team);
 
   const [players, season, seasons] = await Promise.all([
@@ -60,7 +68,7 @@ router_register('team', async (container, { coach, team, editorMode, fromStats, 
   ]);
 
   container.innerHTML = _teamDetailHTML(team, players, season, seasons, recentGames, editorMode, activeGame);
-  _bindTeamDetail(container, coach, team, players, season, seasons, editorMode, activeGame, fromStats);
+  _bindTeamDetail(container, coach, team, players, season, seasons, editorMode, activeGame, fromScreen);
 });
 
 // ── HOME TEMPLATES ────────────────────────────────────────────
@@ -234,11 +242,14 @@ function _teamDetailHTML(team, players, season, seasons, recentGames, editorMode
          </div>
          ${seasonSelector}
          <div class="tds-games">
-           <span id="game-count-link"
-             style="cursor:pointer;text-decoration:underline dotted var(--muted);"
-             title="View game history">
-             ${recentGames.length} game${recentGames.length !== 1 ? 's' : ''} recorded
-           </span>
+           ${recentGames.length > 0
+             ? `<span id="game-count-link"
+                 style="cursor:pointer;color:var(--lime);text-decoration:underline;"
+                 title="View game history">
+                 ${recentGames.length} game${recentGames.length !== 1 ? 's' : ''} recorded
+               </span>`
+             : `<span style="color:var(--muted);">No games yet</span>`
+           }
          </div>
        </div>`
     : `<div class="team-detail-season">
@@ -516,10 +527,10 @@ function _bindHomeSignedIn(container, coach, teams, activeGames = []) {
   });
 }
 
-function _bindTeamDetail(container, coach, team, players, season, seasons, editorMode, activeGame, fromStats) {
-  // Back — if we came from stats, return there; otherwise go home
+function _bindTeamDetail(container, coach, team, players, season, seasons, editorMode, activeGame, fromScreen) {
+  // Back — return to the screen we came from
   container.querySelector('#btn-back')?.addEventListener('click', () => {
-    if (fromStats) {
+    if (fromScreen === 'stats') {
       router_navigate('stats', { coach, team, season });
     } else {
       router_navigate('home', { coach });
