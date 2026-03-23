@@ -250,6 +250,13 @@ function _teamDetailHTML(team, players, season, recentGames, editorMode) {
 
         <!-- Roster -->
         <div class="divider" style="margin-top: 8px;"></div>
+
+        ${!editorMode ? `
+        <div style="padding: 0 20px 12px;">
+          <button class="btn-ghost" id="btn-strategy">⚙ Sub Strategy</button>
+        </div>
+        ` : ''}
+
         <div class="section-title">
           Roster
           <span style="font-family:'JetBrains Mono',monospace; font-size:11px;
@@ -410,6 +417,11 @@ function _bindTeamDetail(container, coach, team, players, season, editorMode) {
   // Back
   container.querySelector('#btn-back')?.addEventListener('click', () => {
     router_navigate('home', { coach });
+  });
+
+  // Sub Strategy
+  container.querySelector('#btn-strategy')?.addEventListener('click', () => {
+    router_navigate('strategy', { coach, team, season });
   });
 
   // Start game
