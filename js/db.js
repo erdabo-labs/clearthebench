@@ -345,6 +345,116 @@ function db_unsubscribe(channel) {
   _db.removeChannel(channel);
 }
 
+// ── ACTIVE GAME ───────────────────────────────────────────────
+
+async function db_getActiveGame(seasonId) {
+  // Returns the most-recent game in the season that has events but no game_end event.
+  const { data, error } = await _db
+    .from('games')
+    .select('id, opponent, date, field_size, mode, strategy_snapshot, season_id, game_events(event_type)')
+    .eq('season_id', seasonId)
+    .order('date', { ascending: false });
+
+  if (error) { console.error('db_getActiveGame', error); return null; }
+
+  for (const game of (data || [])) {
+    const evts = game.game_events || [];
+    if (evts.length > 0 && !evts.some(e => e.event_type === 'game_end')) {
+      const { game_events, ...gameRow } = game;
+      return gameRow;
+    }
+  }
+  return null;
+}
+
+async function db_getGameSummary(gameId) {
+  const [roster, events] = await Promise.all([
+    db_getGameRoster(gameId),
+    db_getGameEvents(gameId),
+  ]);
+
+  const playerMap = {};
+  for (const player of roster) {
+    playerMap[player.id] = { player, fieldEnteredAt: null, totalOnTime: 0 };
+  }
+
+  let gameStartTs = null;
+  let gameEndTs = null;
+
+  for (const evt of events) {
+    const ts = evt.timestamp || 0;
+    if (evt.event_type === 'game_start' && gameStartTs === null) gameStartTs = ts;
+    if (evt.event_type === 'game_end') gameEndTs = ts;
+    const pm = evt.player_id ? playerMap[evt.player_id] : null;
+    if (!pm) continue;
+    if (evt.event_type === 'sub_on') {
+      pm.fieldEnteredAt = ts;
+    } else if (evt.event_type === 'sub_off' && pm.fieldEnteredAt !== null) {
+      pm.totalOnTime += Math.max(0, ts - pm.fieldEnteredAt);
+      pm.fieldEnteredAt = null;
+    }
+  }
+
+  const closeTs = gameEndTs != null ? gameEndTs
+    : (events.length ? (events[events.length - 1].timestamp || 0) : 0);
+
+  for (const pm of Object.values(playerMap)) {
+    if (pm.fieldEnteredAt !== null) {
+      pm.totalOnTime += Math.max(0, closeTs - pm.fieldEnteredAt);
+      pm.fieldEnteredAt = null;
+    }
+  }
+
+  const players = Object.values(playerMap)
+    .map(pm => ({ player: pm.player, totalOnTime: pm.totalOnTime }))
+    .sort((a, b) => b.totalOnTime - a.totalOnTime);
+
+  const gameDuration = gameEndTs != null && gameStartTs != null
+    ? Math.max(0, gameEndTs - gameStartTs)
+    : Math.max(0, closeTs - (gameStartTs || 0));
+
+  return { players, gameDuration };
+}
+
+// ── SEASON MANAGEMENT ─────────────────────────────────────────
+
+async function db_updateSeason(seasonId, updates) {
+  const { data, error } = await _db
+    .from('seasons')
+    .update(updates)
+    .eq('id', seasonId)
+    .select()
+    .single();
+  if (error) { console.error('db_updateSeason', error); return null; }
+  return data;
+}
+
+async function db_setSeasonInactive(seasonId) {
+  return db_updateSeason(seasonId, { active: false });
+}
+
+async function db_getSeasons(teamId) {
+  const { data, error } = await _db
+    .from('seasons')
+    .select('*')
+    .eq('team_id', teamId)
+    .order('created_at', { ascending: false });
+  if (error) { console.error('db_getSeasons', error); return []; }
+  return data;
+}
+
+// ── ALL SEASON GAMES (for history) ────────────────────────────
+
+async function db_getSeasonGamesAll(seasonId) {
+  const { data, error } = await _db
+    .from('games')
+    .select('id, date, opponent, mode, game_events(event_type, timestamp)')
+    .eq('season_id', seasonId)
+    .order('date', { ascending: false });
+  if (error) { console.error('db_getSeasonGamesAll', error); return []; }
+  return data;
+}
+
 // ── HELPERS ───────────────────────────────────────────────────
 
 function _generateCode(length) {

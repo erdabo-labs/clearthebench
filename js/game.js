@@ -197,6 +197,13 @@ let _gs = null;
 
 router_register('game', async (container, params) => {
   const { gameId, coach, team, season } = params;
+
+  // Guard: if no gameId, go back to team detail
+  if (!gameId) {
+    router_navigate('team', { coach, team, season });
+    return;
+  }
+
   _gs = null;
 
   container.innerHTML = `
@@ -246,6 +253,12 @@ async function _initGameState(game, roster, events, { coach, team, season }) {
     };
   }
 
+  // Read strategy snapshot for enforcement
+  const snap = game.strategy_snapshot || {};
+  const snapConfig = snap.config || {};
+  const goalieLocked = (snap.mode === 'manual_nudge' && snapConfig.goalieLocked)
+    ? snapConfig.goalieLocked : null;
+
   _gs = {
     game,
     team,
@@ -259,8 +272,9 @@ async function _initGameState(game, roster, events, { coach, team, season }) {
     timerSeconds: 0,
     timerInterval: null,
     seriesNum: 0,
-    goalieLocked: null,
+    goalieLocked,
     pendingBenchPlayer: null,
+    nudgeAlertedSet: new Set(),
     realtimeChannel: null,
     container: null,
   };
@@ -380,6 +394,12 @@ function _renderFullScreen(container) {
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
       </div>
+      <div style="padding: 4px 16px 2px;">
+        <button class="btn-ghost" id="btn-end-game"
+          style="color:var(--red);width:100%;font-size:13px;padding:8px 16px;">
+          End Game
+        </button>
+      </div>
       <div class="bottom-nav">
         <div class="nav-item active" id="nav-game">
           <div class="nav-icon">🏟</div>
@@ -457,17 +477,20 @@ function _renderFieldZone(container) {
     const firstName = p.name.split(' ')[0];
     const total = ps.totalOnTime + ps.currentStint;
     const isOverTime = median > 0 && total > median * 1.5;
+    const isGoalie = _gs.goalieLocked === p.id;
     const timeDisplay = _gs.mode === 'football'
       ? `S${ps.currentStint}`
       : `${Math.floor(ps.currentStint / 60)}m`;
+    let namePrefix = isGoalie ? '🥅 ' : isOverTime ? '⚠ ' : '';
+    let borderStyle = isGoalie ? 'border-color:var(--blue);' : isOverTime ? 'border-color:var(--orange);' : '';
 
     return `
-      <div class="player-chip${isOverTime ? ' over-time' : ''}"
+      <div class="player-chip${isOverTime && !isGoalie ? ' over-time' : ''}"
         data-player-id="${p.id}"
-        ${isOverTime ? 'style="border-color:var(--orange);"' : ''}
+        ${borderStyle ? `style="${borderStyle}"` : ''}
       >
         <div class="player-num">${_esc(displayNum)}</div>
-        <div class="player-name-small">${isOverTime ? '⚠ ' : ''}${_esc(firstName)}</div>
+        <div class="player-name-small">${namePrefix}${_esc(firstName)}</div>
         <div class="player-mins">${_esc(timeDisplay)}</div>
       </div>
     `;
@@ -508,9 +531,24 @@ function _renderBenchZone(container) {
     return { ps, currentBenchTime };
   });
 
-  withBenchTime.sort((a, b) =>
-    (b.ps.totalBenchTime + b.currentBenchTime) - (a.ps.totalBenchTime + a.currentBenchTime)
-  );
+  const _bsnap = _gs.game.strategy_snapshot || {};
+  const _isStrictQueue = _bsnap.mode === 'strict_queue';
+  const _queueOrder = _isStrictQueue ? (_bsnap.config?.playerOrder || []) : [];
+
+  if (_isStrictQueue) {
+    withBenchTime.sort((a, b) => {
+      const ai = _queueOrder.indexOf(a.ps.player.id);
+      const bi = _queueOrder.indexOf(b.ps.player.id);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  } else {
+    withBenchTime.sort((a, b) =>
+      (b.ps.totalBenchTime + b.currentBenchTime) - (a.ps.totalBenchTime + a.currentBenchTime)
+    );
+  }
 
   const totalGameTime = isFootball ? _gs.seriesNum : _gs.timerSeconds;
 
@@ -583,11 +621,15 @@ function _bindGameEvents(container) {
     seriesBtn.addEventListener('click', () => _advanceSeries(container));
   }
 
+  container.querySelector('#btn-end-game')?.addEventListener('click', () => {
+    _confirmDialog('End this game? This can\'t be undone.', _endGame);
+  });
+
   container.querySelector('#nav-stats')?.addEventListener('click', () => {
     _leaveGame('stats', { coach: _gs.coach, team: _gs.team, season: _gs.season });
   });
   container.querySelector('#nav-roster')?.addEventListener('click', () => {
-    _leaveGame('team', { coach: _gs.coach, team: _gs.team, season: _gs.season });
+    _openRosterSheet();
   });
   container.querySelector('#nav-share')?.addEventListener('click', () => {
     _shareGame();
@@ -626,29 +668,36 @@ function _toggleTimer(container) {
       _renderClock(_gs.container);
       _renderBenchZone(_gs.container);
 
+      // 25-minute halftime alert
       if (_gs.timerSeconds === ALERT_MINUTES * 60) {
-        if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
-        try {
-          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-          audioCtx.resume().then(() => {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.frequency.value = 880;
-            osc.type = 'sine';
-            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-            osc.start(audioCtx.currentTime);
-            osc.stop(audioCtx.currentTime + 0.3);
-          });
-        } catch (e) {
-          // iOS audio restriction — ignore
+        _fireAlert();
+        _showToast(`${ALERT_MINUTES} min — check subs!`);
+      }
+
+      // Timer swap strategy alert
+      const _snap = _gs.game.strategy_snapshot || {};
+      if (_snap.mode === 'timer_swap' && _snap.config?.intervalMinutes) {
+        const intSecs = _snap.config.intervalMinutes * 60;
+        if (_gs.timerSeconds > 0 && _gs.timerSeconds % intSecs === 0) {
+          _fireAlert();
+          _showToast(`Time to swap! (every ${_snap.config.intervalMinutes}m)`);
         }
-        const appEl = document.getElementById('app');
-        if (appEl) {
-          appEl.classList.add('timer-flash');
-          setTimeout(() => appEl.classList.remove('timer-flash'), 600);
+      }
+
+      // Manual nudge strategy: alert when bench player sitting too long
+      if (_snap.mode === 'manual_nudge' && _snap.config?.alertMinutes > 0) {
+        const alertSecs = _snap.config.alertMinutes * 60;
+        for (const id of Object.keys(_gs.players)) {
+          const ps = _gs.players[id];
+          if (!ps.onField && ps.benchSince !== null && !_gs.nudgeAlertedSet.has(id)) {
+            const sittingSecs = _gs.timerSeconds - ps.benchSince;
+            if (sittingSecs >= alertSecs) {
+              _gs.nudgeAlertedSet.add(id);
+              const firstName = ps.player.name.split(' ')[0];
+              _showToast(`${firstName} has been sitting ${_snap.config.alertMinutes}m`);
+              _fireAlert();
+            }
+          }
         }
       }
     }, 1000);
@@ -697,7 +746,7 @@ function _openSwapModal(benchPlayerId) {
   if (!benchPs) return;
 
   const onFieldSorted = Object.values(_gs.players)
-    .filter(ps => ps.onField)
+    .filter(ps => ps.onField && ps.player.id !== _gs.goalieLocked)
     .sort((a, b) => (b.totalOnTime + b.currentStint) - (a.totalOnTime + a.currentStint));
 
   const playerRows = onFieldSorted.map((ps, idx) => {
@@ -797,6 +846,7 @@ function _executeSwap(benchPlayerId, fieldPlayerId) {
     ? Math.max(0, now - benchPs.benchSince)
     : 0;
   benchPs.onField = true;
+  if (_gs.nudgeAlertedSet) _gs.nudgeAlertedSet.delete(benchPlayerId);
   benchPs.fieldEnteredAt = now;
   benchPs.currentStint = 0;
   benchPs.benchSince = null;
@@ -865,6 +915,211 @@ function _leaveGame(screen, params) {
   _gs = null;
   router_navigate(screen, params);
 }
+
+function _fireAlert() {
+  if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume().then(() => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + 0.3);
+    });
+  } catch (e) {}
+  const appEl = document.getElementById('app');
+  if (appEl) {
+    appEl.classList.add('timer-flash');
+    setTimeout(() => appEl.classList.remove('timer-flash'), 600);
+  }
+}
+
+function _endGame() {
+  if (_gs.timerRunning) {
+    clearInterval(_gs.timerInterval);
+    _gs.timerInterval = null;
+    _gs.timerRunning = false;
+  }
+  db_insertEvent({
+    gameId: _gs.game.id,
+    playerId: null,
+    eventType: 'game_end',
+    timestamp: _gs.timerSeconds,
+    seriesNum: _gs.seriesNum,
+  });
+  const { coach, team, season } = _gs;
+  const gameId = _gs.game.id;
+  _leaveGame('game-summary', { gameId, coach, team, season });
+}
+
+function _confirmDialog(message, onConfirm) {
+  const existing = document.getElementById('ctb-confirm-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'ctb-confirm-overlay';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-title" style="font-size:16px;margin-bottom:16px;">${_esc(message)}</div>
+      <button class="btn-ghost" id="confirm-yes"
+        style="color:var(--red);width:100%;margin-bottom:8px;">Yes, end it</button>
+      <div class="swap-cancel" id="confirm-no">Cancel</div>
+    </div>
+  `;
+  document.getElementById('app').appendChild(overlay);
+
+  overlay.querySelector('#confirm-yes')?.addEventListener('click', () => {
+    overlay.remove();
+    onConfirm();
+  });
+  overlay.querySelector('#confirm-no')?.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+function _openRosterSheet() {
+  const existing = document.getElementById('roster-sheet-overlay');
+  if (existing) existing.remove();
+
+  const fieldPlayers = Object.values(_gs.players).filter(ps => ps.onField);
+  const benchPlayers = Object.values(_gs.players).filter(ps => !ps.onField);
+  const ref = _gs.mode === 'football' ? _gs.seriesNum : _gs.timerSeconds;
+
+  const makeRow = (ps, onField) => {
+    const p = ps.player;
+    const initials = p.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const isGoalie = _gs.goalieLocked === p.id;
+    let timeLabel, timeColor;
+    if (onField) {
+      const mins = _gs.mode === 'football'
+        ? `S${ps.currentStint}`
+        : `${Math.floor(ps.currentStint / 60)}m`;
+      timeLabel = `ON · ${mins}`;
+      timeColor = 'var(--lime)';
+    } else {
+      const benchSecs = ps.benchSince !== null ? Math.max(0, ref - ps.benchSince) : 0;
+      const mins = _gs.mode === 'football'
+        ? `S${benchSecs}`
+        : `${Math.floor(benchSecs / 60)}m`;
+      timeLabel = `BENCH · ${mins}`;
+      timeColor = 'var(--muted)';
+    }
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;
+        border-bottom:1px solid var(--border);">
+        <div class="bench-avatar">${_esc(initials)}</div>
+        <div style="flex:1;font-size:14px;color:var(--white);">
+          ${_esc(p.name)}${isGoalie ? ' 🥅' : ''}
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${timeColor};">
+          ${timeLabel}
+        </div>
+      </div>
+    `;
+  };
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'roster-sheet-overlay';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-title">Roster</div>
+      <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;
+        margin-bottom:6px;">ON FIELD (${fieldPlayers.length})</div>
+      <div style="margin-bottom:12px;">
+        ${fieldPlayers.map(ps => makeRow(ps, true)).join('') ||
+          '<div style="color:var(--muted);font-size:13px;padding:6px 0;">—</div>'}
+      </div>
+      <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;
+        margin-bottom:6px;">BENCH (${benchPlayers.length})</div>
+      <div>
+        ${benchPlayers.map(ps => makeRow(ps, false)).join('') ||
+          '<div style="color:var(--muted);font-size:13px;padding:6px 0;">—</div>'}
+      </div>
+      <div class="swap-cancel" id="roster-sheet-close" style="margin-top:16px;">Close</div>
+    </div>
+  `;
+
+  document.getElementById('app').appendChild(overlay);
+  overlay.querySelector('#roster-sheet-close')?.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ── GAME SUMMARY SCREEN ───────────────────────────────────────
+
+router_register('game-summary', async (container, { gameId, coach, team, season }) => {
+  container.innerHTML = `
+    <div class="screen">
+      <div class="app-header">
+        <div class="app-logo">Clear<span>The</span>Bench</div>
+      </div>
+      <div class="screen-body" style="display:flex;align-items:center;justify-content:center;">
+        <div style="color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:12px;">
+          Loading summary...
+        </div>
+      </div>
+    </div>
+  `;
+
+  const summary = await db_getGameSummary(gameId);
+  const totalMin = Math.floor(summary.gameDuration / 60);
+
+  const rows = summary.players.map(ps => {
+    const mins = Math.floor(ps.totalOnTime / 60);
+    const secs = ps.totalOnTime % 60;
+    const initials = ps.player.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const pct = summary.gameDuration > 0
+      ? Math.min(100, Math.round((ps.totalOnTime / summary.gameDuration) * 100))
+      : 0;
+    const barClass = pct >= 60 ? '' : pct >= 40 ? 'mid' : 'alert';
+    return `
+      <div class="stat-player-row" style="padding: 0 20px;">
+        <div class="bench-avatar" style="flex-shrink:0;">${_esc(initials)}</div>
+        <div class="stat-name">${_esc(ps.player.name)}</div>
+        <div class="stat-bar-wrap">
+          <div class="stat-bar-fill ${barClass}" style="width:${pct}%;"></div>
+        </div>
+        <div class="stat-pct" style="${pct < 40 ? 'color:var(--red)' : pct < 60 ? 'color:var(--yellow)' : 'color:var(--lime)'}">
+          ${mins}m${secs > 0 ? ` ${secs}s` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="screen">
+      <div class="app-header">
+        <div class="app-logo">Clear<span>The</span>Bench</div>
+      </div>
+      <div class="screen-body">
+        <div style="padding: 0 20px 16px;">
+          <div class="section-title" style="padding:0;margin-bottom:4px;">GAME OVER</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">
+            ${totalMin > 0 ? `${totalMin} min · ` : ''}${summary.players.length} players
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="section-title">PLAYING TIME</div>
+        <div class="stats-body" style="padding-bottom:8px;">
+          ${rows || '<div style="padding:20px;color:var(--muted);font-size:13px;">No data</div>'}
+        </div>
+        <div style="padding: 0 20px 48px;">
+          <button class="btn-primary" id="btn-done">Done</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.querySelector('#btn-done')?.addEventListener('click', () => {
+    router_navigate('team', { coach, team, season });
+  });
+});
 
 function _formatTime(seconds) {
   const m = Math.floor(seconds / 60);
