@@ -13,7 +13,7 @@ async function db_getOrCreateCoach(email) {
   if (!user) return null;
 
   const { data, error } = await _db
-    .from('coaches')
+    .from('ctb_coaches')
     .select('*')
     .eq('id', user.id)
     .maybeSingle();
@@ -24,7 +24,7 @@ async function db_getOrCreateCoach(email) {
 
   // First sign-in — insert coach record
   const { data: created, error: insertErr } = await _db
-    .from('coaches')
+    .from('ctb_coaches')
     .insert({ id: user.id, email: user.email })
     .select()
     .single();
@@ -37,8 +37,8 @@ async function db_getOrCreateCoach(email) {
 
 async function db_getTeams(coachId) {
   const { data, error } = await _db
-    .from('teams')
-    .select('*, seasons(id, name, active)')
+    .from('ctb_teams')
+    .select('*, ctb_seasons(id, name, active)')
     .eq('coach_id', coachId)
     .order('created_at', { ascending: false });
 
@@ -51,7 +51,7 @@ async function db_createTeam({ coachId, name, sport }) {
   const editorCode = _generateCode(6).toUpperCase();
 
   const { data, error } = await _db
-    .from('teams')
+    .from('ctb_teams')
     .insert({ coach_id: coachId, name, sport, short_code: shortCode, editor_code: editorCode })
     .select()
     .single();
@@ -66,7 +66,7 @@ async function db_createTeam({ coachId, name, sport }) {
 
 async function db_getTeamByEditorCode(code) {
   const { data, error } = await _db
-    .from('teams')
+    .from('ctb_teams')
     .select('*')
     .eq('editor_code', code.toUpperCase())
     .maybeSingle();
@@ -79,7 +79,7 @@ async function db_getTeamByEditorCode(code) {
 
 async function db_createSeason(teamId, name) {
   const { data, error } = await _db
-    .from('seasons')
+    .from('ctb_seasons')
     .insert({ team_id: teamId, name, active: true })
     .select()
     .single();
@@ -90,7 +90,7 @@ async function db_createSeason(teamId, name) {
 
 async function db_getActiveSeason(teamId) {
   const { data, error } = await _db
-    .from('seasons')
+    .from('ctb_seasons')
     .select('*')
     .eq('team_id', teamId)
     .eq('active', true)
@@ -106,7 +106,7 @@ async function db_getActiveSeason(teamId) {
 
 async function db_getPlayers(teamId) {
   const { data, error } = await _db
-    .from('players')
+    .from('ctb_players')
     .select('*')
     .eq('team_id', teamId)
     .eq('active', true)
@@ -118,7 +118,7 @@ async function db_getPlayers(teamId) {
 
 async function db_createPlayer({ teamId, name, jerseyNumber }) {
   const { data, error } = await _db
-    .from('players')
+    .from('ctb_players')
     .insert({ team_id: teamId, name, jersey_number: jerseyNumber || null })
     .select()
     .single();
@@ -129,7 +129,7 @@ async function db_createPlayer({ teamId, name, jerseyNumber }) {
 
 async function db_updatePlayer(playerId, updates) {
   const { data, error } = await _db
-    .from('players')
+    .from('ctb_players')
     .update(updates)
     .eq('id', playerId)
     .select()
@@ -147,7 +147,7 @@ async function db_deactivatePlayer(playerId) {
 
 async function db_getStrategy(teamId) {
   const { data, error } = await _db
-    .from('team_strategy')
+    .from('ctb_team_strategy')
     .select('*')
     .eq('team_id', teamId)
     .maybeSingle();
@@ -158,14 +158,14 @@ async function db_getStrategy(teamId) {
 
 async function db_upsertStrategy(teamId, mode, config) {
   const { data: existing } = await _db
-    .from('team_strategy')
+    .from('ctb_team_strategy')
     .select('id')
     .eq('team_id', teamId)
     .maybeSingle();
 
   if (existing) {
     const { data, error } = await _db
-      .from('team_strategy')
+      .from('ctb_team_strategy')
       .update({ mode, config, updated_at: new Date().toISOString() })
       .eq('team_id', teamId)
       .select()
@@ -175,7 +175,7 @@ async function db_upsertStrategy(teamId, mode, config) {
   }
 
   const { data, error } = await _db
-    .from('team_strategy')
+    .from('ctb_team_strategy')
     .insert({ team_id: teamId, mode, config })
     .select()
     .single();
@@ -187,7 +187,7 @@ async function db_upsertStrategy(teamId, mode, config) {
 
 async function db_createGame({ seasonId, opponent, mode, fieldSize, strategySnapshot, playerIds }) {
   const { data: game, error } = await _db
-    .from('games')
+    .from('ctb_games')
     .insert({
       season_id: seasonId,
       opponent: opponent || null,
@@ -203,7 +203,7 @@ async function db_createGame({ seasonId, opponent, mode, fieldSize, strategySnap
   // Insert game roster
   if (playerIds && playerIds.length) {
     const rows = playerIds.map(pid => ({ game_id: game.id, player_id: pid }));
-    const { error: rosterErr } = await _db.from('game_roster').insert(rows);
+    const { error: rosterErr } = await _db.from('ctb_game_roster').insert(rows);
     if (rosterErr) console.error('db_createGame roster', rosterErr);
   }
 
@@ -212,8 +212,8 @@ async function db_createGame({ seasonId, opponent, mode, fieldSize, strategySnap
 
 async function db_getGame(gameId) {
   const { data, error } = await _db
-    .from('games')
-    .select('*, seasons(id, name, team_id, teams(id, name, short_code, sport, coach_id))')
+    .from('ctb_games')
+    .select('*, ctb_seasons(id, name, team_id, ctb_teams(id, name, short_code, sport, coach_id))')
     .eq('id', gameId)
     .single();
 
@@ -223,7 +223,7 @@ async function db_getGame(gameId) {
 
 async function db_getRecentGames(seasonId, limit = 3) {
   const { data, error } = await _db
-    .from('games')
+    .from('ctb_games')
     .select('*')
     .eq('season_id', seasonId)
     .order('date', { ascending: false })
@@ -235,8 +235,8 @@ async function db_getRecentGames(seasonId, limit = 3) {
 
 async function db_getGameRoster(gameId) {
   const { data, error } = await _db
-    .from('game_roster')
-    .select('*, players(*)')
+    .from('ctb_game_roster')
+    .select('*, ctb_players(*)')
     .eq('game_id', gameId);
 
   if (error) { console.error('db_getGameRoster', error); return []; }
@@ -256,7 +256,7 @@ async function db_insertEvent({ gameId, playerId, eventType, timestamp, seriesNu
   if (playerId != null) row.player_id = playerId;
 
   const { data, error } = await _db
-    .from('game_events')
+    .from('ctb_game_events')
     .insert(row)
     .select()
     .single();
@@ -267,7 +267,7 @@ async function db_insertEvent({ gameId, playerId, eventType, timestamp, seriesNu
 
 async function db_getGameEvents(gameId) {
   const { data, error } = await _db
-    .from('game_events')
+    .from('ctb_game_events')
     .select('*')
     .eq('game_id', gameId)
     .order('timestamp', { ascending: true });
@@ -280,7 +280,7 @@ async function db_getGameEvents(gameId) {
 
 async function db_upsertPositionLog({ gameId, playerId, position, minutes }) {
   const { data: existing } = await _db
-    .from('position_log')
+    .from('ctb_position_log')
     .select('id')
     .eq('game_id', gameId)
     .eq('player_id', playerId)
@@ -289,7 +289,7 @@ async function db_upsertPositionLog({ gameId, playerId, position, minutes }) {
 
   if (existing) {
     const { error } = await _db
-      .from('position_log')
+      .from('ctb_position_log')
       .update({ minutes })
       .eq('id', existing.id);
     if (error) console.error('db_upsertPositionLog update', error);
@@ -297,14 +297,14 @@ async function db_upsertPositionLog({ gameId, playerId, position, minutes }) {
   }
 
   const { error } = await _db
-    .from('position_log')
+    .from('ctb_position_log')
     .insert({ game_id: gameId, player_id: playerId, position, minutes });
   if (error) console.error('db_upsertPositionLog insert', error);
 }
 
 async function db_getPositionLog(gameId) {
   const { data, error } = await _db
-    .from('position_log')
+    .from('ctb_position_log')
     .select('*')
     .eq('game_id', gameId);
 
@@ -316,11 +316,11 @@ async function db_getPositionLog(gameId) {
 
 async function db_getSeasonGames(seasonId) {
   const { data, error } = await _db
-    .from('games')
+    .from('ctb_games')
     .select(`
       id, date, opponent, mode,
-      game_roster(player_id),
-      game_events(player_id, event_type, timestamp)
+      ctb_game_roster(player_id),
+      ctb_game_events(player_id, event_type, timestamp)
     `)
     .eq('season_id', seasonId)
     .order('date', { ascending: true });
@@ -337,7 +337,7 @@ function db_subscribeToGame(gameId, onEvent) {
     .on('postgres_changes', {
       event: 'INSERT',
       schema: 'public',
-      table: 'game_events',
+      table: 'ctb_game_events',
       filter: `game_id=eq.${gameId}`,
     }, onEvent)
     .subscribe();
@@ -352,8 +352,8 @@ function db_unsubscribe(channel) {
 async function db_getActiveGame(seasonId) {
   // Returns the most-recent game in the season that has events but no game_end event.
   const { data, error } = await _db
-    .from('games')
-    .select('id, opponent, date, field_size, mode, strategy_snapshot, season_id, game_events(event_type)')
+    .from('ctb_games')
+    .select('id, opponent, date, field_size, mode, strategy_snapshot, season_id, ctb_game_events(event_type)')
     .eq('season_id', seasonId)
     .order('date', { ascending: false });
 
@@ -422,7 +422,7 @@ async function db_getGameSummary(gameId) {
 
 async function db_updateSeason(seasonId, updates) {
   const { data, error } = await _db
-    .from('seasons')
+    .from('ctb_seasons')
     .update(updates)
     .eq('id', seasonId)
     .select()
@@ -436,24 +436,24 @@ async function db_setSeasonInactive(seasonId) {
 }
 
 async function db_deleteSeason(seasonId) {
-  const { data: games } = await _db.from('games').select('id').eq('season_id', seasonId);
+  const { data: games } = await _db.from('ctb_games').select('id').eq('season_id', seasonId);
   const gameIds = (games || []).map(g => g.id);
 
   if (gameIds.length > 0) {
-    await _db.from('game_events').delete().in('game_id', gameIds);
-    await _db.from('position_log').delete().in('game_id', gameIds);
-    await _db.from('game_roster').delete().in('game_id', gameIds);
-    await _db.from('games').delete().in('id', gameIds);
+    await _db.from('ctb_game_events').delete().in('game_id', gameIds);
+    await _db.from('ctb_position_log').delete().in('game_id', gameIds);
+    await _db.from('ctb_game_roster').delete().in('game_id', gameIds);
+    await _db.from('ctb_games').delete().in('id', gameIds);
   }
 
-  const { error } = await _db.from('seasons').delete().eq('id', seasonId);
+  const { error } = await _db.from('ctb_seasons').delete().eq('id', seasonId);
   if (error) { console.error('db_deleteSeason', error); return false; }
   return true;
 }
 
 async function db_getSeasons(teamId) {
   const { data, error } = await _db
-    .from('seasons')
+    .from('ctb_seasons')
     .select('*')
     .eq('team_id', teamId)
     .order('created_at', { ascending: false });
@@ -465,10 +465,10 @@ async function db_getSeasons(teamId) {
 
 async function db_getSeasonGamesWithStatus(seasonId) {
   const { data, error } = await _db
-    .from('games')
+    .from('ctb_games')
     .select(`
       id, date, opponent, mode, created_at,
-      game_events(event_type, timestamp)
+      ctb_game_events(event_type, timestamp)
     `)
     .eq('season_id', seasonId)
     .order('created_at', { ascending: false });
@@ -496,8 +496,8 @@ async function db_getSeasonGamesWithStatus(seasonId) {
 
 async function db_getSeasonGamesAll(seasonId) {
   const { data, error } = await _db
-    .from('games')
-    .select('id, date, opponent, mode, game_events(event_type, timestamp)')
+    .from('ctb_games')
+    .select('id, date, opponent, mode, ctb_game_events(event_type, timestamp)')
     .eq('season_id', seasonId)
     .order('date', { ascending: false });
   if (error) { console.error('db_getSeasonGamesAll', error); return []; }
@@ -505,35 +505,35 @@ async function db_getSeasonGamesAll(seasonId) {
 }
 
 async function db_deleteGame(gameId) {
-  await _db.from('game_events').delete().eq('game_id', gameId);
-  await _db.from('position_log').delete().eq('game_id', gameId);
-  await _db.from('game_roster').delete().eq('game_id', gameId);
-  const { error } = await _db.from('games').delete().eq('id', gameId);
+  await _db.from('ctb_game_events').delete().eq('game_id', gameId);
+  await _db.from('ctb_position_log').delete().eq('game_id', gameId);
+  await _db.from('ctb_game_roster').delete().eq('game_id', gameId);
+  const { error } = await _db.from('ctb_games').delete().eq('id', gameId);
   if (error) { console.error('db_deleteGame', error); return false; }
   return true;
 }
 
 async function db_deleteTeam(teamId) {
-  const { data: seasons } = await _db.from('seasons').select('id').eq('team_id', teamId);
+  const { data: seasons } = await _db.from('ctb_seasons').select('id').eq('team_id', teamId);
   const seasonIds = (seasons || []).map(s => s.id);
 
   if (seasonIds.length > 0) {
-    const { data: games } = await _db.from('games').select('id').in('season_id', seasonIds);
+    const { data: games } = await _db.from('ctb_games').select('id').in('season_id', seasonIds);
     const gameIds = (games || []).map(g => g.id);
 
     if (gameIds.length > 0) {
-      await _db.from('game_events').delete().in('game_id', gameIds);
-      await _db.from('position_log').delete().in('game_id', gameIds);
-      await _db.from('game_roster').delete().in('game_id', gameIds);
-      await _db.from('games').delete().in('id', gameIds);
+      await _db.from('ctb_game_events').delete().in('game_id', gameIds);
+      await _db.from('ctb_position_log').delete().in('game_id', gameIds);
+      await _db.from('ctb_game_roster').delete().in('game_id', gameIds);
+      await _db.from('ctb_games').delete().in('id', gameIds);
     }
-    await _db.from('seasons').delete().in('id', seasonIds);
+    await _db.from('ctb_seasons').delete().in('id', seasonIds);
   }
 
-  await _db.from('players').delete().eq('team_id', teamId);
-  await _db.from('team_strategy').delete().eq('team_id', teamId);
+  await _db.from('ctb_players').delete().eq('team_id', teamId);
+  await _db.from('ctb_team_strategy').delete().eq('team_id', teamId);
 
-  const { error } = await _db.from('teams').delete().eq('id', teamId);
+  const { error } = await _db.from('ctb_teams').delete().eq('id', teamId);
   if (error) { console.error('db_deleteTeam', error); return false; }
   return true;
 }
