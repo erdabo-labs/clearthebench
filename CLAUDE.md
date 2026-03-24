@@ -3,6 +3,36 @@
 > **This file is the authoritative project reference for AI agents.**
 > Read it fully before touching any code. All conventions here are enforced.
 
+## Quick Reference
+
+```bash
+# Inject Supabase credentials (generates supabase-config.js from env vars)
+npm run build
+
+# Check open PRs
+gh pr list
+
+# Check Vercel deployments
+vercel ls
+
+# Deploy preview
+vercel deploy
+
+# Deploy production — always ask owner first
+vercel deploy --prod -y
+
+# Link Supabase project (one-time setup)
+supabase link --project-ref <project-ref>
+
+# Apply schema changes — owner approval required
+supabase db push
+```
+
+Environment variables needed: `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+Set via `.envrc` locally (copy from `.envrc.template`) or in Vercel dashboard.
+
+---
+
 ---
 
 ## What this project is

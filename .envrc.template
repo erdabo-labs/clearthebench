@@ -1,0 +1,17 @@
+# ClearTheBench — direnv environment template
+# Copy this file to .envrc and fill in real values, then run: direnv allow
+# .envrc is gitignored — never commit real secrets.
+
+# Supabase credentials (required for npm run build / scripts/inject-config.js)
+# Find these in: Supabase dashboard → Project Settings → API
+export SUPABASE_URL="REPLACE_WITH_SUPABASE_PROJECT_URL"
+export SUPABASE_ANON_KEY="REPLACE_WITH_SUPABASE_ANON_KEY"
+
+# Vercel token (required for vercel CLI commands)
+# Generate at: https://vercel.com/account/tokens
+export VERCEL_TOKEN="REPLACE_WITH_VERCEL_TOKEN"
+
+# Vercel project/org IDs (populated by `vercel link`)
+# After running `vercel link`, copy these from .vercel/project.json
+export VERCEL_PROJECT_ID="REPLACE_WITH_VERCEL_PROJECT_ID"
+export VERCEL_ORG_ID="REPLACE_WITH_VERCEL_ORG_ID"
