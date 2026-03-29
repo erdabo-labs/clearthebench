@@ -3,33 +3,14 @@
 > **This file is the authoritative project reference for AI agents.**
 > Read it fully before touching any code. All conventions here are enforced.
 
-## Quick Reference
-
-```bash
-# Inject Supabase credentials (generates supabase-config.js from env vars)
-npm run build
-
-# Check open PRs
-gh pr list
-
-# Check Vercel deployments
-vercel ls
-
-# Deploy preview
-vercel deploy
-
-# Deploy production — always ask owner first
-vercel deploy --prod -y
-```
-
-Environment variables needed: `SUPABASE_URL`, `SUPABASE_ANON_KEY`
-Set via `.envrc` locally (copy from `.envrc.template`) or in Vercel dashboard.
-
 ---
 
 ## What this project is
 
 ClearTheBench is a vanilla JS youth soccer coaching sideline tool. Coaches use it on their phones during games to track player rotations and playing time. It is a **static site** deployed on Vercel from the `erdabo-labs/clearthebench` GitHub repo, auto-deployed on push to `main`.
+
+Environment variables needed: `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+Set via `.envrc` locally (copy from `.envrc.template`) or in Vercel dashboard.
 
 ---
 
@@ -86,19 +67,7 @@ router_register('screen-name', async (container, params) => { ... });
 router_navigate('screen-name', { ...params });
 ```
 
-All screens render into `#screen-container`. Navigation is always explicit — there are no back-button hooks or browser history entries.
-
-### Registered screens
-
-| Screen | File | Purpose |
-|---|---|---|
-| `home` | app.js | Coach home (signed-in or signed-out) |
-| `signin` | app.js | Magic link login |
-| `create-team` | app.js | New team form |
-| `team` | app.js | Team detail: roster + game controls |
-| `create-game` | game.js | Pre-game setup: attendance, field size, rotation interval |
-| `game` | game.js | Live game: field/bench zones, timer, subs, SWAP ALL |
-| `game-summary` | game.js | Post-game playing time results |
+All screens render into `#screen-container`. Navigation is always explicit — no back-button hooks or browser history entries.
 
 ---
 
@@ -112,7 +81,7 @@ Coach only, via Supabase magic link email. Session stored in localStorage as `ct
 
 ## Database
 
-All tables use the `ctb_` prefix in Supabase.
+All tables use the `ctb_` prefix. All Supabase calls live in `db.js` with `db_*` function names. Read `db.js` for the full function inventory.
 
 ### Key tables
 
@@ -124,33 +93,6 @@ ctb_players       — id, team_id (FK), name, jersey_number, active, created_at
 ctb_games         — id, season_id (FK), opponent, date, mode, field_size, strategy_snapshot (jsonb), created_at
 ctb_game_roster   — id, game_id (FK), player_id (FK)
 ctb_game_events   — id, game_id (FK), player_id (FK, nullable), event_type, timestamp (int), meta (jsonb), created_at
-```
-
-### DB function inventory (`js/db.js`)
-
-```js
-db_getOrCreateCoach(email)
-db_getTeams(coachId)
-db_createTeam({ coachId, name, sport })
-db_deleteTeam(teamId)
-
-db_createSeason(teamId, name)
-db_getActiveSeason(teamId)
-
-db_getPlayers(teamId)              // active only
-db_createPlayer({ teamId, name, jerseyNumber })
-db_updatePlayer(playerId, updates)
-db_deactivatePlayer(playerId)      // sets active=false
-
-db_createGame({ seasonId, opponent, mode, fieldSize, strategySnapshot, playerIds })
-db_getGame(gameId)
-db_getActiveGame(seasonId)         // game with events but no game_end
-db_getGameSummary(gameId)          // per-player field time from events
-db_deleteGame(gameId)
-
-db_insertEvent({ gameId, playerId, eventType, timestamp, meta })
-db_getGameEvents(gameId)
-db_deleteRecentEvents(gameId, count)
 ```
 
 ---
@@ -169,12 +111,7 @@ db_deleteRecentEvents(gameId, count)
 
 **A game is "active" (not yet complete) if it has events but no `game_end` event.** `db_getActiveGame()` implements this check.
 
-### Timer reconstruction on page load
-
-1. Fetch all events from DB via `db_getGameEvents()`
-2. Replay events to compute: timer position, who is on field/bench, cumulative times per player
-3. If game was running (last event is `game_start` not followed by `game_pause`), resume timer from last known timestamp
-4. This solves the critical bug of timer resetting on page refresh
+Timer reconstruction: fetch all events → replay to compute timer position, field/bench state, cumulative times → if game was running, resume from last known timestamp.
 
 ---
 
@@ -182,75 +119,15 @@ db_deleteRecentEvents(gameId, count)
 
 Rotation alert fires at a configurable interval (set during pre-game setup, stored in `strategy_snapshot`).
 
-When the alert fires:
-- Phone vibrates, alert tone plays (Web Audio API)
-- "TIME TO ROTATE" banner appears with SWAP ALL button
+When the alert fires: vibrate, alert tone (Web Audio API), "TIME TO ROTATE" banner with SWAP ALL button.
 
 When coach taps SWAP ALL:
 1. Field players sorted by total playing time descending (most played first)
 2. Bench players sorted by total bench time descending (longest waiting first)
 3. Swap count = min(bench count, field count)
 4. Top N from each list are paired and swapped (`sub_off` + `sub_on` events)
-5. Banner dismissed, toast shown: "Rotated N players"
 
-Individual swaps also supported: tap bench player, then tap field player to swap them. Undo toast available for 6 seconds.
-
----
-
-## Live game state (`js/game.js`)
-
-The live game screen uses a module-level `_gs` object:
-
-```js
-_gs = {
-  game, team, coach, season, roster,
-  fieldSize, players,          // per-player state map keyed by player_id
-  timerRunning, timerSeconds, timerInterval,
-  pendingBenchPlayer,          // for individual swap selection
-  lastSwap,                    // for undo
-  container,
-  alertInterval,               // rotation interval in seconds
-  swapAllVisible,              // whether SWAP ALL banner is showing
-}
-```
-
-Per-player state in `_gs.players[id]`:
-```js
-{ onField, fieldEnteredAt, currentStint, totalOnTime, benchSince, totalBenchTime }
-```
-
----
-
-## Design system
-
-Dark/light theme via `prefers-color-scheme`. Mobile-first (coaches use phones on sidelines).
-
-### CSS variables
-```css
-:root {
-  --bg, --bg-elevated, --card, --card2, --border
-  --lime, --lime-dim, --orange, --red, --yellow, --blue
-  --text, --text-muted
-  --radius, --radius-sm
-}
-```
-
-Light theme overrides backgrounds and text colors via `@media (prefers-color-scheme: light)`.
-
-### Fonts
-- `Bebas Neue` — headings, labels
-- `DM Sans` — body text, buttons
-- `JetBrains Mono` — timers, stats, codes
-
-### UI patterns
-- `.btn-primary` — main CTA (lime background), 44px min tap target
-- `.btn-ghost` — secondary action
-- `.player-chip` — field player card
-- `.bench-player` — bench row with stats
-- `.swap-all-banner` — rotation alert banner (orange, pulsing)
-- `.app-header` — top bar with logo + back arrow
-- `.input-field` — text inputs
-- `.ctb-toast` — toast notifications
+Individual swaps also supported: tap bench player, then tap field player. Undo toast available for 6 seconds.
 
 ---
 
@@ -259,7 +136,6 @@ Light theme overrides backgrounds and text colors via `@media (prefers-color-sch
 - Never use **"fair"** or **"fairness"**
 - Never imply the app makes decisions — it **tracks and shows**
 - The app has no opinion. The coach has the opinion.
-- Examples: "Playing time" not "Fair time". "Shows who's been out longest" not "Decides who should sub in".
 
 ---
 
@@ -270,6 +146,6 @@ Light theme overrides backgrounds and text colors via `@media (prefers-color-sch
 - **No frameworks**: no React, Vue, Svelte, Alpine, etc. — ever
 - **No bundler output**: edit source files directly; Vercel serves them as-is
 - **DB calls are always `async/await`**: never `.then()` chains in call sites
-- **One active game per season**: enforced by `db_getActiveGame()` returning the first unfinished game
+- **One active game per season**: enforced by `db_getActiveGame()`
 - **Soft delete for players**: `db_deactivatePlayer()` sets `active=false`; hard deletes are only for games and teams
-- **Supabase config**: `SUPABASE_URL` and `SUPABASE_ANON_KEY` are globals injected by `scripts/inject-config.js` at build time from environment variables; `supabase-config.js` is gitignored
+- **Supabase config**: globals injected by `scripts/inject-config.js` at build time; `supabase-config.js` is gitignored
