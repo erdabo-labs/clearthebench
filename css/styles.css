@@ -1,1 +1,1294 @@
-/* ClearTheBench */
+/* =============================================================
+   ClearTheBench — Complete Design System
+   Youth soccer coaching sideline tool
+   ============================================================= */
+
+/* ── CSS VARIABLES (Dark Theme Default) ─────────────────────── */
+
+:root {
+  --field: #0a1a0a;
+  --bg: #0d1f0d;
+  --bg-elevated: #122812;
+  --card: #163016;
+  --card2: #1a3a1a;
+  --border: #264026;
+  --lime: #a8e063;
+  --lime-dim: #4a6b2a;
+  --orange: #ff9f43;
+  --red: #ff6b6b;
+  --yellow: #ffd93d;
+  --blue: #6bceff;
+  --text: #e8f5e0;
+  --text-muted: #8aaa7a;
+  --radius: 14px;
+  --radius-sm: 8px;
+}
+
+/* ── LIGHT THEME ────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --field: #f0f7ee;
+    --bg: #f5faf3;
+    --bg-elevated: #ffffff;
+    --card: #eaf4e6;
+    --card2: #ddefd7;
+    --border: #c4ddb8;
+    --text: #1a2e14;
+    --text-muted: #5a7a4e;
+  }
+}
+
+/* ── RESET & BASE ───────────────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* ── APP SHELL ──────────────────────────────────────────────── */
+
+#app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+#screen-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.screen-body {
+  flex: 1;
+  padding: 0 16px 32px;
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ── APP HEADER ─────────────────────────────────────────────── */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--bg);
+}
+
+.app-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px;
+  letter-spacing: 1px;
+  color: var(--text);
+  user-select: none;
+}
+
+.app-logo span {
+  color: var(--lime);
+}
+
+.header-action {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.header-action:active {
+  background: var(--card2);
+  transform: scale(0.93);
+}
+
+/* ── BUTTONS ────────────────────────────────────────────────── */
+
+.btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 24px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--field);
+  background: var(--lime);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+  user-select: none;
+}
+
+.btn-primary:active {
+  transform: scale(0.97);
+  background: #96cc56;
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 24px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+  user-select: none;
+}
+
+.btn-ghost:active {
+  background: var(--card);
+  transform: scale(0.97);
+}
+
+.btn-danger {
+  color: var(--red);
+  border-color: rgba(255, 107, 107, 0.25);
+}
+
+.btn-danger:active {
+  background: rgba(255, 107, 107, 0.1);
+}
+
+/* ── HOME HERO ──────────────────────────────────────────────── */
+
+.home-hero {
+  text-align: center;
+  padding: 40px 0 32px;
+}
+
+.hero-pitch {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, var(--lime-dim), var(--field));
+  border: 2px solid var(--lime-dim);
+  opacity: 0.8;
+}
+
+.hero-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 40px;
+  line-height: 1.1;
+  color: var(--text);
+  letter-spacing: 1px;
+}
+
+.hero-title span {
+  color: var(--lime);
+}
+
+.hero-sub {
+  margin-top: 10px;
+  font-size: 15px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 300px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.home-actions {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.privacy-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 14px 16px;
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* ── AUTH BANNER ────────────────────────────────────────────── */
+
+.auth-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+.auth-banner strong {
+  color: var(--text);
+}
+
+.auth-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lime);
+  flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* ── SECTIONS ───────────────────────────────────────────────── */
+
+.section-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 18px;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.section-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  color: var(--lime-dim);
+  margin-left: 6px;
+}
+
+/* ── TEAM CARDS ─────────────────────────────────────────────── */
+
+.teams-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.team-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.team-card:active {
+  background: var(--card2);
+  transform: scale(0.98);
+}
+
+.team-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border-radius: 12px;
+}
+
+.team-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.team-name {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.team-arrow {
+  color: var(--text-muted);
+  font-size: 22px;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+/* ── ACTIVE GAME CARD ───────────────────────────────────────── */
+
+.active-game-card {
+  border-color: var(--lime-dim);
+  background: rgba(168, 224, 99, 0.06);
+}
+
+.active-game-card:active {
+  background: rgba(168, 224, 99, 0.12);
+}
+
+.active-dot-wrap {
+  position: relative;
+}
+
+.active-dot-wrap::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--lime);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.active-meta {
+  color: var(--lime);
+}
+
+.active-arrow {
+  color: var(--lime);
+  opacity: 0.8;
+}
+
+/* ── EMPTY / LOADING / HINT ─────────────────────────────────── */
+
+.empty-state {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.loading-msg {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.hint-text {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ── INPUTS ─────────────────────────────────────────────────── */
+
+.input-group {
+  margin-bottom: 16px;
+}
+
+.input-label {
+  display: block;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.input-field {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input-field::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.input-field:focus {
+  border-color: var(--lime-dim);
+  box-shadow: 0 0 0 3px rgba(168, 224, 99, 0.15);
+}
+
+.player-jersey-input {
+  width: 64px;
+  flex-shrink: 0;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+}
+
+/* ── FORM MESSAGES ──────────────────────────────────────────── */
+
+.form-msg {
+  margin-top: 12px;
+  font-size: 14px;
+  text-align: center;
+  min-height: 20px;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.form-msg.error {
+  color: var(--red);
+}
+
+.form-msg.success {
+  color: var(--lime);
+}
+
+/* ── SIGN IN SCREEN ─────────────────────────────────────────── */
+
+.signin-body {
+  padding-top: 24px;
+}
+
+.signin-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+/* ── CREATE TEAM SCREEN ─────────────────────────────────────── */
+
+.create-body {
+  padding-top: 24px;
+}
+
+/* ── TEAM HERO ──────────────────────────────────────────────── */
+
+.team-hero {
+  text-align: center;
+  padding: 24px 0 28px;
+}
+
+.team-hero-icon {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+
+.team-hero-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 32px;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+
+/* ── ROSTER LIST ────────────────────────────────────────────── */
+
+.roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+
+.player-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--lime-dim);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.player-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.player-name-text {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-jersey {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.btn-remove-player {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-remove-player:active {
+  background: rgba(255, 107, 107, 0.15);
+  color: var(--red);
+}
+
+/* ── ADD PLAYER FORM ────────────────────────────────────────── */
+
+.add-player-form {
+  margin-bottom: 24px;
+}
+
+.add-player-fields {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.add-player-fields .input-field {
+  flex: 1;
+}
+
+.btn-add-player {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--lime);
+  color: var(--field);
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.btn-add-player:active {
+  background: #96cc56;
+  transform: scale(0.93);
+}
+
+.btn-add-player:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── TEAM ACTIONS ───────────────────────────────────────────── */
+
+.team-actions {
+  margin-bottom: 20px;
+}
+
+.danger-zone {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── MODAL ──────────────────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: modal-fade-in 0.2s ease-out;
+}
+
+.modal-sheet {
+  width: 100%;
+  max-width: 480px;
+  padding: 24px 20px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-top: 1px solid var(--border);
+  animation: modal-slide-up 0.25s ease-out;
+}
+
+.modal-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  word-break: break-all;
+}
+
+.modal-cancel {
+  margin-top: 12px;
+  padding: 12px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.modal-cancel:active {
+  color: var(--text);
+}
+
+/* ── RECOVERY CARD ──────────────────────────────────────────── */
+
+.recovery-card {
+  text-align: center;
+  padding: 40px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 24px;
+}
+
+.recovery-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.recovery-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  letter-spacing: 1px;
+  color: var(--lime);
+  margin-bottom: 8px;
+}
+
+.recovery-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+.recovery-card .btn-primary {
+  margin-bottom: 10px;
+}
+
+/* ── GAME HEADER / TIMER ────────────────────────────────────── */
+
+.game-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+}
+
+.game-timer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+
+.game-clock {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 36px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 2px;
+  line-height: 1;
+}
+
+.game-clock.paused {
+  animation: timer-flash 1s ease-in-out infinite;
+}
+
+.timer-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--lime);
+  flex-shrink: 0;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.timer-dot.stopped {
+  background: var(--text-muted);
+  animation: none;
+}
+
+/* ── GAME CONTROLS ──────────────────────────────────────────── */
+
+.game-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.game-controls .btn-ghost,
+.game-controls .btn-primary {
+  flex: 1;
+  min-height: 44px;
+  font-size: 13px;
+  padding: 10px 8px;
+}
+
+/* ── FIELD & BENCH ZONES ────────────────────────────────────── */
+
+.field-zone {
+  padding: 16px 12px;
+  background: rgba(168, 224, 99, 0.04);
+  border: 1px solid rgba(168, 224, 99, 0.15);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  min-height: 80px;
+}
+
+.bench-zone {
+  padding: 16px 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  min-height: 60px;
+}
+
+.zone-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 14px;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+/* ── PLAYER CHIP (Field Players) ────────────────────────────── */
+
+.player-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin: 4px;
+  background: var(--card);
+  border: 2px solid var(--lime-dim);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  user-select: none;
+}
+
+.player-chip .chip-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.player-chip:active {
+  transform: scale(0.95);
+}
+
+.player-chip.selected {
+  border-color: var(--orange);
+  background: rgba(255, 159, 67, 0.12);
+}
+
+/* ── BENCH PLAYER (Bench Row) ───────────────────────────────── */
+
+.bench-player {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  user-select: none;
+}
+
+.bench-player:active {
+  transform: scale(0.98);
+}
+
+.bench-player .bench-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.bench-player .bench-wait {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.bench-player.selected {
+  background: rgba(255, 159, 67, 0.12);
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--orange);
+  outline-offset: -2px;
+}
+
+/* ── SWAP ALL BANNER ────────────────────────────────────────── */
+
+.swap-all-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 20px 16px;
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  background: var(--orange);
+  text-align: center;
+  animation: banner-pulse 1.5s ease-in-out infinite;
+}
+
+.swap-all-banner .banner-text {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: #1a0e00;
+  margin-bottom: 12px;
+}
+
+.swap-all-banner .btn-swap-all {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 12px 32px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--orange);
+  background: #1a0e00;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.swap-all-banner .btn-swap-all:active {
+  transform: scale(0.95);
+}
+
+.swap-all-banner .btn-dismiss {
+  display: block;
+  margin: 10px auto 0;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(26, 14, 0, 0.6);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* ── TOAST ──────────────────────────────────────────────────── */
+
+.ctb-toast {
+  position: fixed;
+  bottom: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  padding: 12px 20px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+  transition: bottom 0.3s ease-out;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ctb-toast.show {
+  bottom: max(24px, calc(env(safe-area-inset-bottom) + 12px));
+  animation: toast-slide-up 0.3s ease-out;
+}
+
+.ctb-toast .toast-undo {
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lime);
+  background: none;
+  border: 1px solid var(--lime-dim);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ctb-toast .toast-undo:active {
+  background: rgba(168, 224, 99, 0.15);
+}
+
+/* ── PRE-GAME SETUP ─────────────────────────────────────────── */
+
+.pregame-section {
+  margin-bottom: 20px;
+}
+
+.pregame-label {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.attendance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.attendance-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.attendance-row:active {
+  background: var(--card2);
+}
+
+.attendance-check {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 14px;
+  color: transparent;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.attendance-row.checked .attendance-check {
+  border-color: var(--lime);
+  background: var(--lime);
+  color: var(--field);
+}
+
+.roster-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* ── STEPPER ────────────────────────────────────────────────── */
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--card);
+}
+
+.stepper-btn {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: var(--card);
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.stepper-btn:active {
+  background: var(--card2);
+}
+
+.stepper-value {
+  min-width: 56px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 0 4px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+/* ── GAME SUMMARY ───────────────────────────────────────────── */
+
+.summary-header {
+  text-align: center;
+  padding: 24px 0 20px;
+}
+
+.summary-header .summary-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+
+.summary-header .summary-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.summary-list .summary-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.summary-player-name {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.summary-bar {
+  flex: 1;
+  height: 24px;
+  background: var(--card);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.summary-bar-fill {
+  height: 100%;
+  background: var(--lime);
+  border-radius: 4px;
+  transition: width 0.6s ease-out;
+  min-width: 2px;
+}
+
+.summary-player-time {
+  width: 50px;
+  flex-shrink: 0;
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.equity-stars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 24px;
+  padding: 12px 0;
+}
+
+.equity-stars .star-filled {
+  color: var(--yellow);
+}
+
+.equity-stars .star-empty {
+  color: var(--border);
+}
+
+.share-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 24px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.share-btn:active {
+  background: var(--card2);
+  transform: scale(0.97);
+}
+
+/* ── ANIMATIONS ─────────────────────────────────────────────── */
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+@keyframes toast-slide-up {
+  from {
+    bottom: -80px;
+    opacity: 0;
+  }
+  to {
+    bottom: max(24px, calc(env(safe-area-inset-bottom) + 12px));
+    opacity: 1;
+  }
+}
+
+@keyframes banner-pulse {
+  0%, 100% { background: var(--orange); }
+  50% { background: #ffb36e; }
+}
+
+@keyframes timer-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* ── SCROLLBAR STYLING ──────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+/* ── UTILITY ────────────────────────────────────────────────── */
+
+@media (min-width: 480px) {
+  .screen-body {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
