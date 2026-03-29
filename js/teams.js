@@ -5,6 +5,30 @@
 // ── HOME SCREEN ───────────────────────────────────────────────
 
 router_register('home', async (container, { coach } = {}) => {
+  // Clean up stale game recovery keys (>24h old)
+  _cleanupStaleGameKeys();
+
+  // Check for recoverable active game
+  const recoveryKeys = _getActiveGameKeys();
+  if (recoveryKeys.length > 0) {
+    try {
+      const snapshot = JSON.parse(localStorage.getItem(recoveryKeys[0]));
+      if (snapshot?.gameId) {
+        container.innerHTML = _recoveryBannerHTML();
+        container.querySelector('#btn-resume-game')?.addEventListener('click', () => {
+          router_navigate('game', { gameId: snapshot.gameId, coach });
+        });
+        container.querySelector('#btn-discard-game')?.addEventListener('click', () => {
+          recoveryKeys.forEach(k => localStorage.removeItem(k));
+          router_navigate('home', { coach });
+        });
+        return;
+      }
+    } catch (e) {
+      recoveryKeys.forEach(k => localStorage.removeItem(k));
+    }
+  }
+
   // Editor mode — bypass signed-out home, navigate directly to their team
   const editorTeam = auth_getEditorTeam();
   if (!coach && editorTeam) {
@@ -95,6 +119,29 @@ function _homeSignedOut() {
             <span class="icon">🔒</span>
             <span>We only store your email. No passwords, no profile, no data sold.</span>
           </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function _recoveryBannerHTML() {
+  return `
+    <div class="screen">
+      <div class="screen-body">
+        <div class="app-header">
+          <div class="app-logo">Clear<span>The</span>Bench</div>
+        </div>
+        <div style="padding: 20px; text-align: center;">
+          <div style="font-size: 48px; margin-bottom: 12px;">🏟️</div>
+          <div style="font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; margin-bottom: 8px;">
+            ACTIVE GAME FOUND
+          </div>
+          <div style="color: var(--muted); font-size: 13px; margin-bottom: 24px;">
+            You have a game in progress. Would you like to resume?
+          </div>
+          <button class="btn-primary" id="btn-resume-game" style="margin-bottom: 12px;">RESUME GAME</button>
+          <button class="btn-ghost" id="btn-discard-game">Discard &amp; Go Home</button>
         </div>
       </div>
     </div>

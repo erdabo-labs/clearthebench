@@ -276,6 +276,27 @@ async function db_getGameEvents(gameId) {
   return data;
 }
 
+async function db_deleteRecentEvents(gameId, count) {
+  const { data, error } = await _db
+    .from('ctb_game_events')
+    .select('id')
+    .eq('game_id', gameId)
+    .order('created_at', { ascending: false })
+    .limit(count);
+
+  if (error) { console.error('db_deleteRecentEvents', error); return false; }
+  if (!data || data.length === 0) return true;
+
+  const ids = data.map(e => e.id);
+  const { error: delErr } = await _db
+    .from('ctb_game_events')
+    .delete()
+    .in('id', ids);
+
+  if (delErr) { console.error('db_deleteRecentEvents delete', delErr); return false; }
+  return true;
+}
+
 // ── POSITION LOG ──────────────────────────────────────────────
 
 async function db_upsertPositionLog({ gameId, playerId, position, minutes }) {
