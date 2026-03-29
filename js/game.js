@@ -234,6 +234,23 @@ router_register('game', async (container, params) => {
   }
 
   await _initGameState(game, roster, events, { coach, team, season });
+
+  // Restore local state from localStorage if available (crash recovery)
+  const savedKey = `ctb_active_game_${gameId}`;
+  try {
+    const saved = localStorage.getItem(savedKey);
+    if (saved) {
+      const snapshot = JSON.parse(saved);
+      // Use the higher timer value between DB-derived and localStorage
+      if (snapshot.timerSeconds > _gs.timerSeconds) {
+        _gs.timerSeconds = snapshot.timerSeconds;
+      }
+      if (snapshot.seriesNum > _gs.seriesNum) {
+        _gs.seriesNum = snapshot.seriesNum;
+      }
+    }
+  } catch (e) { /* ignore parse errors */ }
+
   _renderFullScreen(container);
 });
 
@@ -409,9 +426,9 @@ function _renderFullScreen(container) {
           <div class="nav-icon">📊</div>
           <div class="nav-label">STATS</div>
         </div>
-        <div class="nav-item" id="nav-roster">
-          <div class="nav-icon">👥</div>
-          <div class="nav-label">ROSTER</div>
+        <div class="nav-item" id="nav-rotate">
+          <div class="nav-icon">🔄</div>
+          <div class="nav-label">ROTATE</div>
         </div>
         <div class="nav-item" id="nav-share">
           <div class="nav-icon">🔗</div>
@@ -496,20 +513,30 @@ function _renderFieldZone(container) {
     `;
   }).join('');
 
+  const swapMode = !!_gs.pendingBenchPlayer;
   zone.innerHTML = `
     <div class="zone-label">
-      ON FIELD
+      ${swapMode ? 'ON FIELD — tap to swap out' : 'ON FIELD'}
       <span class="zone-count">${onFieldPlayers.length}</span>
+      ${swapMode ? '<button class="cancel-select" id="btn-cancel-select">✕</button>' : ''}
     </div>
     <div class="field-grid" id="field-grid">
       ${chips || '<div style="color:var(--muted);font-size:12px;padding:8px 0;">No players on field</div>'}
     </div>
   `;
 
+  if (swapMode) {
+    zone.querySelector('#btn-cancel-select')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _cancelQuickSwap();
+    });
+  }
+
   zone.querySelectorAll('.player-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       const playerId = chip.dataset.playerId;
       if (_gs.pendingBenchPlayer && playerId) {
+        _haptic(50);
         _executeSwap(_gs.pendingBenchPlayer, playerId);
       }
     });
@@ -596,11 +623,183 @@ function _renderBenchZone(container) {
     </div>
   `;
 
+  // Re-apply selected state if a bench player is pending (survives 15s re-render)
+  if (_gs.pendingBenchPlayer) {
+    const selectedRow = zone.querySelector(`.bench-player[data-player-id="${_gs.pendingBenchPlayer}"]`);
+    if (selectedRow) selectedRow.classList.add('selected');
+  }
+
   zone.querySelectorAll('.bench-player').forEach(row => {
-    row.addEventListener('click', () => {
-      const playerId = row.dataset.playerId;
-      if (playerId) _openSwapModal(playerId);
+    let pressTimer = null;
+    let didLongPress = false;
+
+    row.addEventListener('pointerdown', (e) => {
+      didLongPress = false;
+      pressTimer = setTimeout(() => {
+        didLongPress = true;
+        const playerId = row.dataset.playerId;
+        if (playerId) _openSwapModal(playerId);
+      }, 500);
     });
+
+    row.addEventListener('pointerup', () => {
+      clearTimeout(pressTimer);
+      if (didLongPress) return;
+      const playerId = row.dataset.playerId;
+      if (!playerId) return;
+
+      // Short tap: toggle quick-swap selection
+      if (_gs.pendingBenchPlayer === playerId) {
+        _cancelQuickSwap();
+      } else {
+        _selectBenchPlayer(playerId);
+      }
+    });
+
+    row.addEventListener('pointerleave', () => clearTimeout(pressTimer));
+    row.addEventListener('pointercancel', () => clearTimeout(pressTimer));
+  });
+}
+
+function _selectBenchPlayer(playerId) {
+  _gs.pendingBenchPlayer = playerId;
+  _haptic(50);
+
+  // Highlight the selected bench row
+  const benchZone = _gs.container?.querySelector('#bench-zone');
+  if (benchZone) {
+    benchZone.querySelectorAll('.bench-player.selected').forEach(el => el.classList.remove('selected'));
+    const row = benchZone.querySelector(`.bench-player[data-player-id="${playerId}"]`);
+    if (row) row.classList.add('selected');
+  }
+
+  // Update field zone label to swap mode
+  _updateFieldZoneLabel();
+}
+
+function _cancelQuickSwap() {
+  _gs.pendingBenchPlayer = null;
+  const benchZone = _gs.container?.querySelector('#bench-zone');
+  if (benchZone) {
+    benchZone.querySelectorAll('.bench-player.selected').forEach(el => el.classList.remove('selected'));
+  }
+  _updateFieldZoneLabel();
+}
+
+function _updateFieldZoneLabel() {
+  const zone = _gs.container?.querySelector('#field-zone');
+  if (!zone) return;
+  const label = zone.querySelector('.zone-label');
+  if (!label) return;
+
+  const onFieldPlayers = Object.values(_gs.players).filter(ps => ps.onField);
+
+  if (_gs.pendingBenchPlayer) {
+    label.innerHTML = `
+      ON FIELD — tap to swap out
+      <span class="zone-count">${onFieldPlayers.length}</span>
+      <button class="cancel-select" id="btn-cancel-select">✕</button>
+    `;
+    label.querySelector('#btn-cancel-select')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _cancelQuickSwap();
+    });
+  } else {
+    label.innerHTML = `
+      ON FIELD
+      <span class="zone-count">${onFieldPlayers.length}</span>
+    `;
+  }
+}
+
+function _haptic(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern);
+}
+
+function _saveGameState() {
+  if (!_gs?.game?.id) return;
+  const snapshot = {
+    gameId: _gs.game.id,
+    timerSeconds: _gs.timerSeconds,
+    timerRunning: _gs.timerRunning,
+    seriesNum: _gs.seriesNum,
+    goalieLocked: _gs.goalieLocked,
+    savedAt: Date.now(),
+    players: {},
+  };
+  for (const [id, ps] of Object.entries(_gs.players)) {
+    snapshot.players[id] = {
+      onField: ps.onField,
+      fieldEnteredAt: ps.fieldEnteredAt,
+      currentStint: ps.currentStint,
+      totalOnTime: ps.totalOnTime,
+      benchSince: ps.benchSince,
+      totalBenchTime: ps.totalBenchTime,
+    };
+  }
+  try {
+    localStorage.setItem(`ctb_active_game_${_gs.game.id}`, JSON.stringify(snapshot));
+  } catch (e) { /* storage full — fail silently */ }
+}
+
+function _clearGameState(gameId) {
+  try { localStorage.removeItem(`ctb_active_game_${gameId}`); } catch (e) {}
+}
+
+function _getActiveGameKeys() {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('ctb_active_game_')) keys.push(key);
+  }
+  return keys;
+}
+
+function _cleanupStaleGameKeys() {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  for (const key of _getActiveGameKeys()) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      if (data?.savedAt && (Date.now() - data.savedAt) > DAY_MS) {
+        localStorage.removeItem(key);
+      }
+    } catch (e) { localStorage.removeItem(key); }
+  }
+}
+
+function _updateTimers() {
+  const c = _gs?.container;
+  if (!c) return;
+
+  // Update field player time displays
+  c.querySelectorAll('.player-chip[data-player-id]').forEach(chip => {
+    const ps = _gs.players[chip.dataset.playerId];
+    if (!ps || !ps.onField) return;
+    const minsEl = chip.querySelector('.player-mins');
+    if (!minsEl) return;
+    const timeDisplay = _gs.mode === 'football'
+      ? `S${ps.currentStint}`
+      : `${Math.floor(ps.currentStint / 60)}m`;
+    minsEl.textContent = timeDisplay;
+  });
+
+  // Update bench player stat displays
+  const isFootball = _gs.mode === 'football';
+  c.querySelectorAll('.bench-player[data-player-id]').forEach(row => {
+    const ps = _gs.players[row.dataset.playerId];
+    if (!ps || ps.onField) return;
+    const statsEl = row.querySelector('.bench-stats');
+    if (!statsEl) return;
+    const benchSince = ps.benchSince !== null ? ps.benchSince : 0;
+    const ref = isFootball ? _gs.seriesNum : _gs.timerSeconds;
+    const currentBenchTime = Math.max(0, ref - benchSince);
+    if (isFootball) {
+      statsEl.textContent = `S${currentBenchTime} bench · S${ps.totalOnTime} total`;
+    } else {
+      const sittingMin = Math.floor(currentBenchTime / 60);
+      const totalMin = Math.floor(ps.totalOnTime / 60);
+      statsEl.textContent = `sitting ${sittingMin}m · ${totalMin}m total`;
+    }
   });
 }
 
@@ -628,12 +827,34 @@ function _bindGameEvents(container) {
   container.querySelector('#nav-stats')?.addEventListener('click', () => {
     _leaveGame('stats', { coach: _gs.coach, team: _gs.team, season: _gs.season });
   });
-  container.querySelector('#nav-roster')?.addEventListener('click', () => {
-    _openRosterSheet();
+  container.querySelector('#nav-rotate')?.addEventListener('click', () => {
+    _openRotateModal();
   });
   container.querySelector('#nav-share')?.addEventListener('click', () => {
     _shareGame();
   });
+
+  // Re-acquire wake lock when returning to tab
+  document.addEventListener('visibilitychange', _onVisibilityChange);
+}
+
+function _onVisibilityChange() {
+  if (document.visibilityState === 'visible' && _gs?.timerRunning && !_gs.wakeLock) {
+    _acquireWakeLock();
+  }
+}
+
+async function _acquireWakeLock() {
+  if (!navigator.wakeLock || _gs.coach === null) return; // no wake lock for spectators
+  try {
+    _gs.wakeLock = await navigator.wakeLock.request('screen');
+    _gs.wakeLock.addEventListener('release', () => { _gs.wakeLock = null; });
+  } catch (e) { /* browser may deny — fail silently */ }
+}
+
+function _releaseWakeLock() {
+  try { _gs.wakeLock?.release(); } catch (e) {}
+  _gs.wakeLock = null;
 }
 
 function _toggleTimer(container) {
@@ -641,6 +862,7 @@ function _toggleTimer(container) {
     clearInterval(_gs.timerInterval);
     _gs.timerInterval = null;
     _gs.timerRunning = false;
+    _releaseWakeLock();
     db_insertEvent({
       gameId: _gs.game.id,
       playerId: null,
@@ -650,6 +872,7 @@ function _toggleTimer(container) {
     });
   } else {
     _gs.timerRunning = true;
+    _acquireWakeLock();
     db_insertEvent({
       gameId: _gs.game.id,
       playerId: null,
@@ -667,11 +890,20 @@ function _toggleTimer(container) {
 
       _renderClock(_gs.container);
 
-      // Re-render player zones every 15 s — avoids per-second flicker
-      // while keeping displays fresh enough for coaching
+      // Lightweight timer text update every 5s
+      if (_gs.timerSeconds % 5 === 0) {
+        _updateTimers();
+      }
+
+      // Full re-render every 15s for layout/sort changes
       if (_gs.timerSeconds % 15 === 0) {
         _renderFieldZone(_gs.container);
         _renderBenchZone(_gs.container);
+      }
+
+      // Save state every 30s for crash recovery
+      if (_gs.timerSeconds % 30 === 0) {
+        _saveGameState();
       }
 
       // 25-minute halftime alert
@@ -832,7 +1064,26 @@ function _executeSwap(benchPlayerId, fieldPlayerId) {
   const fieldPs = _gs.players[fieldPlayerId];
   if (!benchPs || !fieldPs) return;
 
+  // Invalidate previous undo opportunity
+  _gs.lastSwap = null;
+
   const now = _gs.mode === 'football' ? _gs.seriesNum : _gs.timerSeconds;
+
+  // Snapshot state before mutation (for undo)
+  const fieldPrevSnap = {
+    totalOnTime: fieldPs.totalOnTime,
+    fieldEnteredAt: fieldPs.fieldEnteredAt,
+    currentStint: fieldPs.currentStint,
+    benchSince: fieldPs.benchSince,
+    totalBenchTime: fieldPs.totalBenchTime,
+  };
+  const benchPrevSnap = {
+    totalOnTime: benchPs.totalOnTime,
+    fieldEnteredAt: benchPs.fieldEnteredAt,
+    currentStint: benchPs.currentStint,
+    benchSince: benchPs.benchSince,
+    totalBenchTime: benchPs.totalBenchTime,
+  };
 
   // Take field player off
   fieldPs.totalOnTime += fieldPs.currentStint;
@@ -864,8 +1115,73 @@ function _executeSwap(benchPlayerId, fieldPlayerId) {
     seriesNum: _gs.seriesNum,
   });
 
+  // Haptic confirmation for swap execution
+  _haptic(150);
+
+  // Store last swap for undo
+  const benchName = benchPs.player.name.split(' ')[0];
+  const fieldName = fieldPs.player.name.split(' ')[0];
+  _gs.lastSwap = {
+    benchPlayerId,
+    fieldPlayerId,
+    timestamp: now,
+    fieldPrevSnap,
+    benchPrevSnap,
+  };
+
   _gs.pendingBenchPlayer = null;
   _renderGame(_gs.container);
+  _saveGameState();
+
+  // Show undo toast (6s)
+  _showToast(`Subbed in ${benchName} ↔ ${fieldName}`, {
+    label: 'UNDO',
+    duration: 6000,
+    callback: () => _undoLastSwap(),
+  });
+}
+
+async function _undoLastSwap() {
+  if (!_gs?.lastSwap) return;
+  const { benchPlayerId, fieldPlayerId, timestamp } = _gs.lastSwap;
+  const now = _gs.mode === 'football' ? _gs.seriesNum : _gs.timerSeconds;
+
+  // Staleness guard: don't undo if >10 seconds have passed
+  if (_gs.mode !== 'football' && (now - timestamp) > 10) {
+    _showToast('Too late to undo');
+    _gs.lastSwap = null;
+    return;
+  }
+
+  // benchPlayerId is now on field — move back to bench
+  const benchPs = _gs.players[benchPlayerId];
+  // fieldPlayerId is now on bench — move back to field
+  const fieldPs = _gs.players[fieldPlayerId];
+
+  if (!benchPs || !fieldPs) { _gs.lastSwap = null; return; }
+
+  // Reverse: restore fieldPlayer to its pre-swap state (was on field)
+  fieldPs.onField = true;
+  fieldPs.fieldEnteredAt = _gs.lastSwap.fieldPrevSnap.fieldEnteredAt;
+  fieldPs.currentStint = _gs.lastSwap.fieldPrevSnap.currentStint;
+  fieldPs.totalOnTime = _gs.lastSwap.fieldPrevSnap.totalOnTime;
+  fieldPs.benchSince = _gs.lastSwap.fieldPrevSnap.benchSince;
+  fieldPs.totalBenchTime = _gs.lastSwap.fieldPrevSnap.totalBenchTime;
+
+  // Reverse: restore benchPlayer to its pre-swap state (was on bench)
+  benchPs.onField = false;
+  benchPs.fieldEnteredAt = _gs.lastSwap.benchPrevSnap.fieldEnteredAt;
+  benchPs.currentStint = _gs.lastSwap.benchPrevSnap.currentStint;
+  benchPs.totalOnTime = _gs.lastSwap.benchPrevSnap.totalOnTime;
+  benchPs.benchSince = _gs.lastSwap.benchPrevSnap.benchSince;
+  benchPs.totalBenchTime = _gs.lastSwap.benchPrevSnap.totalBenchTime;
+
+  // Delete the 2 most recent events from DB (sub_off + sub_on)
+  await db_deleteRecentEvents(_gs.game.id, 2);
+
+  _gs.lastSwap = null;
+  _renderGame(_gs.container);
+  _showToast('Swap undone');
 }
 
 function _shareGame() {
@@ -887,43 +1203,49 @@ function _shareGame() {
   }
 }
 
-function _showToast(message) {
+function _showToast(message, action) {
   const existing = document.getElementById('ctb-toast');
   if (existing) existing.remove();
 
   const toast = document.createElement('div');
   toast.id = 'ctb-toast';
-  toast.textContent = message;
-  Object.assign(toast.style, {
-    position: 'fixed',
-    bottom: 'calc(72px + var(--safe-bottom, 0px))',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    background: 'var(--card2)',
-    border: '1px solid var(--border)',
-    color: 'var(--white)',
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '12px',
-    padding: '8px 16px',
-    borderRadius: 'var(--radius-sm)',
-    zIndex: '200',
-    whiteSpace: 'nowrap',
-    pointerEvents: 'none',
-  });
+  toast.className = 'ctb-toast';
+
+  const msgSpan = document.createElement('span');
+  msgSpan.textContent = message;
+  toast.appendChild(msgSpan);
+
+  let duration = 2500;
+
+  if (action) {
+    duration = action.duration || 6000;
+    toast.style.pointerEvents = 'auto';
+    const btn = document.createElement('button');
+    btn.className = 'toast-action-btn';
+    btn.textContent = action.label;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toast.remove();
+      action.callback();
+    });
+    toast.appendChild(btn);
+  }
 
   document.getElementById('app').appendChild(toast);
-  setTimeout(() => toast.remove(), 2500);
+  setTimeout(() => toast.remove(), duration);
 }
 
 function _leaveGame(screen, params) {
   if (_gs?.timerInterval) clearInterval(_gs.timerInterval);
   if (_gs?.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+  _releaseWakeLock();
+  document.removeEventListener('visibilitychange', _onVisibilityChange);
   _gs = null;
   router_navigate(screen, params);
 }
 
 function _fireAlert() {
-  if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+  _haptic([200, 100, 200]);
   try {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     audioCtx.resume().then(() => {
@@ -959,6 +1281,7 @@ async function _endGame() {
     timestamp: _gs.timerSeconds,
     seriesNum: _gs.seriesNum,
   });
+  _clearGameState(_gs.game.id);
   const { coach, team, season } = _gs;
   const gameId = _gs.game.id;
   _leaveGame('game-summary', { gameId, coach, team, season });
@@ -987,6 +1310,179 @@ function _confirmDialog(message, onConfirm) {
   });
   overlay.querySelector('#confirm-no')?.addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+function _openRotateModal() {
+  const existing = document.getElementById('rotate-modal-overlay');
+  if (existing) existing.remove();
+
+  const isFootball = _gs.mode === 'football';
+  const ref = isFootball ? _gs.seriesNum : _gs.timerSeconds;
+
+  // Get field players sorted by time on (longest first)
+  const fieldPlayers = Object.values(_gs.players)
+    .filter(ps => ps.onField && ps.player.id !== _gs.goalieLocked)
+    .sort((a, b) => (b.totalOnTime + b.currentStint) - (a.totalOnTime + a.currentStint));
+
+  // Get bench players sorted by bench time (longest first)
+  const benchPlayers = Object.values(_gs.players)
+    .filter(ps => !ps.onField)
+    .map(ps => {
+      const benchTime = ps.benchSince !== null ? Math.max(0, ref - ps.benchSince) : 0;
+      return { ps, benchTime };
+    })
+    .sort((a, b) => (b.ps.totalBenchTime + b.benchTime) - (a.ps.totalBenchTime + a.benchTime));
+
+  const makeFieldRow = (ps) => {
+    const p = ps.player;
+    const initials = _initials(p.name);
+    const timeStr = isFootball ? `S${ps.currentStint}` : `${Math.floor(ps.currentStint / 60)}m`;
+    return `
+      <label class="rotate-row" data-player-id="${p.id}">
+        <input type="checkbox" class="rotate-checkbox rotate-field-check" value="${p.id}">
+        <div class="bench-avatar">${_esc(initials)}</div>
+        <div class="rotate-name">${_esc(p.name)}</div>
+        <div class="rotate-time">${timeStr}</div>
+      </label>
+    `;
+  };
+
+  const makeBenchRow = ({ ps, benchTime }) => {
+    const p = ps.player;
+    const initials = _initials(p.name);
+    const timeStr = isFootball ? `S${benchTime} bench` : `${Math.floor(benchTime / 60)}m bench`;
+    return `
+      <label class="rotate-row" data-player-id="${p.id}">
+        <input type="checkbox" class="rotate-checkbox rotate-bench-check" value="${p.id}">
+        <div class="bench-avatar">${_esc(initials)}</div>
+        <div class="rotate-name">${_esc(p.name)}</div>
+        <div class="rotate-time">${timeStr}</div>
+      </label>
+    `;
+  };
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'rotate-modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-sheet" style="max-height:90vh;">
+      <div class="modal-title">ROTATE PLAYERS</div>
+      <div class="modal-sub">Select equal numbers to swap</div>
+      <div class="rotate-columns">
+        <div class="rotate-column">
+          <div class="rotate-column-title">COMING OFF</div>
+          ${fieldPlayers.map(makeFieldRow).join('')}
+        </div>
+        <div class="rotate-column">
+          <div class="rotate-column-title">GOING IN</div>
+          ${benchPlayers.map(makeBenchRow).join('')}
+        </div>
+      </div>
+      <div class="rotate-pair-preview" id="rotate-preview"></div>
+      <button class="btn-primary" id="btn-swap-confirm" disabled style="opacity:0.4;">SWAP 0</button>
+      <div class="swap-cancel" id="rotate-cancel">Cancel</div>
+    </div>
+  `;
+
+  document.getElementById('app').appendChild(overlay);
+
+  const fieldChecks = overlay.querySelectorAll('.rotate-field-check');
+  const benchChecks = overlay.querySelectorAll('.rotate-bench-check');
+  const swapBtn = overlay.querySelector('#btn-swap-confirm');
+  const preview = overlay.querySelector('#rotate-preview');
+
+  const updateState = () => {
+    const fieldSelected = Array.from(fieldChecks).filter(c => c.checked).map(c => c.value);
+    const benchSelected = Array.from(benchChecks).filter(c => c.checked).map(c => c.value);
+    const count = Math.min(fieldSelected.length, benchSelected.length);
+    const canSwap = fieldSelected.length > 0 && fieldSelected.length === benchSelected.length;
+
+    swapBtn.disabled = !canSwap;
+    swapBtn.style.opacity = canSwap ? '' : '0.4';
+    swapBtn.textContent = `SWAP ${fieldSelected.length}`;
+
+    // Show pairing preview (longest on field ↔ longest on bench)
+    if (canSwap) {
+      const pairs = fieldSelected.map((fid, i) => {
+        const fp = _gs.players[fid]?.player;
+        const bp = _gs.players[benchSelected[i]]?.player;
+        return fp && bp ? `${fp.name.split(' ')[0]} ↔ ${bp.name.split(' ')[0]}` : '';
+      }).filter(Boolean);
+      preview.innerHTML = pairs.map(p => `<div class="rotate-pair">${_esc(p)}</div>`).join('');
+    } else {
+      preview.innerHTML = '';
+    }
+  };
+
+  fieldChecks.forEach(c => c.addEventListener('change', updateState));
+  benchChecks.forEach(c => c.addEventListener('change', updateState));
+
+  swapBtn.addEventListener('click', () => {
+    const fieldSelected = Array.from(fieldChecks).filter(c => c.checked).map(c => c.value);
+    const benchSelected = Array.from(benchChecks).filter(c => c.checked).map(c => c.value);
+    if (fieldSelected.length !== benchSelected.length || fieldSelected.length === 0) return;
+
+    const pairs = fieldSelected.map((fid, i) => ({
+      fieldPlayerId: fid,
+      benchPlayerId: benchSelected[i],
+    }));
+
+    overlay.remove();
+    _executeMultiSwap(pairs);
+  });
+
+  overlay.querySelector('#rotate-cancel')?.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+function _executeMultiSwap(pairs) {
+  const now = _gs.mode === 'football' ? _gs.seriesNum : _gs.timerSeconds;
+
+  // Invalidate single undo
+  _gs.lastSwap = null;
+
+  for (const { benchPlayerId, fieldPlayerId } of pairs) {
+    const benchPs = _gs.players[benchPlayerId];
+    const fieldPs = _gs.players[fieldPlayerId];
+    if (!benchPs || !fieldPs) continue;
+
+    // Take field player off
+    fieldPs.totalOnTime += fieldPs.currentStint;
+    fieldPs.onField = false;
+    fieldPs.benchSince = now;
+    fieldPs.currentStint = 0;
+    db_insertEvent({
+      gameId: _gs.game.id,
+      playerId: fieldPlayerId,
+      eventType: 'sub_off',
+      timestamp: _gs.timerSeconds,
+      seriesNum: _gs.seriesNum,
+    });
+
+    // Put bench player on field
+    benchPs.totalBenchTime += benchPs.benchSince !== null
+      ? Math.max(0, now - benchPs.benchSince)
+      : 0;
+    benchPs.onField = true;
+    if (_gs.nudgeAlertedSet) _gs.nudgeAlertedSet.delete(benchPlayerId);
+    benchPs.fieldEnteredAt = now;
+    benchPs.currentStint = 0;
+    benchPs.benchSince = null;
+    db_insertEvent({
+      gameId: _gs.game.id,
+      playerId: benchPlayerId,
+      eventType: 'sub_on',
+      timestamp: _gs.timerSeconds,
+      seriesNum: _gs.seriesNum,
+    });
+  }
+
+  _haptic(150);
+  _renderGame(_gs.container);
+  _saveGameState();
+
+  const count = pairs.length;
+  _showToast(`Rotated ${count} player${count > 1 ? 's' : ''}`);
 }
 
 function _openRosterSheet() {
@@ -1060,6 +1556,7 @@ function _openRosterSheet() {
 // ── GAME SUMMARY SCREEN ───────────────────────────────────────
 
 router_register('game-summary', async (container, { gameId, coach, team, season }) => {
+  _clearGameState(gameId);
   container.innerHTML = `
     <div class="screen">
       <div class="app-header">
@@ -1075,28 +1572,54 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
 
   const summary = await db_getGameSummary(gameId);
   const totalMin = Math.floor(summary.gameDuration / 60);
+  const numPlayers = summary.players.length;
+  const targetPct = numPlayers > 0 ? Math.round(100 / numPlayers) : 0;
 
-  const rows = summary.players.map(ps => {
+  // Calculate percentages and equity score
+  const pcts = summary.players.map(ps =>
+    summary.gameDuration > 0
+      ? Math.min(100, Math.round((ps.totalOnTime / summary.gameDuration) * 100))
+      : 0
+  );
+
+  // Standard deviation of playing time percentages → equity stars (lower = better)
+  let equityStars = 5;
+  if (pcts.length > 1) {
+    const mean = pcts.reduce((a, b) => a + b, 0) / pcts.length;
+    const variance = pcts.reduce((a, p) => a + (p - mean) ** 2, 0) / pcts.length;
+    const stdDev = Math.sqrt(variance);
+    // Map: 0-5 → 5 stars, 5-10 → 4, 10-15 → 3, 15-20 → 2, 20+ → 1
+    equityStars = Math.max(1, Math.min(5, Math.round(5 - stdDev / 5)));
+  }
+  const stars = '★'.repeat(equityStars) + '☆'.repeat(5 - equityStars);
+
+  const rows = summary.players.map((ps, idx) => {
     const mins = Math.floor(ps.totalOnTime / 60);
     const secs = ps.totalOnTime % 60;
-    const initials = ps.player.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    const pct = summary.gameDuration > 0
-      ? Math.min(100, Math.round((ps.totalOnTime / summary.gameDuration) * 100))
-      : 0;
-    const barClass = pct >= 60 ? '' : pct >= 40 ? 'mid' : 'alert';
+    const initials = _initials(ps.player.name);
+    const pct = pcts[idx];
+    const barColor = pct >= 40 ? 'var(--lime)' : pct >= 25 ? 'var(--yellow)' : 'var(--red)';
+    const pctColor = pct >= 40 ? 'var(--lime)' : pct >= 25 ? 'var(--yellow)' : 'var(--red)';
+
     return `
-      <div class="stat-player-row" style="padding: 0 20px;">
-        <div class="bench-avatar" style="flex-shrink:0;">${_esc(initials)}</div>
-        <div class="stat-name">${_esc(ps.player.name)}</div>
-        <div class="stat-bar-wrap">
-          <div class="stat-bar-fill ${barClass}" style="width:${pct}%;"></div>
+      <div class="summary-player-row">
+        <div class="bench-avatar">${_esc(initials)}</div>
+        <div class="summary-player-info">
+          <div class="summary-player-name">${_esc(ps.player.name)}</div>
+          <div class="summary-player-time">${mins}m${secs > 0 ? ` ${secs}s` : ''}</div>
         </div>
-        <div class="stat-pct" style="${pct < 40 ? 'color:var(--red)' : pct < 60 ? 'color:var(--yellow)' : 'color:var(--lime)'}">
-          ${mins}m${secs > 0 ? ` ${secs}s` : ''}
+        <div class="summary-bar">
+          <div class="summary-bar-fill" style="width:${pct}%;background:${barColor};"></div>
+          <div class="summary-bar-target" style="left:${targetPct}%;"></div>
         </div>
+        <div class="summary-player-pct" style="color:${pctColor};">${pct}%</div>
       </div>
     `;
   }).join('');
+
+  const opponent = _gs?.game?.opponent || '';
+  const teamName = team?.name || '';
+  const gameDate = new Date().toLocaleDateString();
 
   container.innerHTML = `
     <div class="screen">
@@ -1107,23 +1630,49 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
         <div style="padding: 0 20px 16px;">
           <div class="section-title" style="padding:0;margin-bottom:4px;">GAME OVER</div>
           <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">
-            ${totalMin > 0 ? `${totalMin} min · ` : ''}${summary.players.length} players
+            ${totalMin > 0 ? `${totalMin} min · ` : ''}${numPlayers} players
+          </div>
+        </div>
+        <div style="padding:0 20px 16px;">
+          <div class="equity-stars">
+            <span class="equity-label">Equity:</span>
+            <span class="equity-star-display">${stars}</span>
           </div>
         </div>
         <div class="divider"></div>
         <div class="section-title">PLAYING TIME</div>
-        <div class="stats-body" style="padding-bottom:8px;">
+        <div style="padding:0 20px 16px;">
           ${rows || '<div style="padding:20px;color:var(--muted);font-size:13px;">No data</div>'}
         </div>
-        <div style="padding: 0 20px 48px;">
-          <button class="btn-primary" id="btn-done">Done</button>
+        <div style="padding: 0 20px 12px;">
+          <button class="btn-primary" id="btn-done" style="margin-bottom:8px;">Done</button>
+          <button class="btn-ghost summary-share-btn" id="btn-share-summary">Share with Parents</button>
         </div>
+        <div style="height:40px;"></div>
       </div>
     </div>
   `;
 
   container.querySelector('#btn-done')?.addEventListener('click', () => {
     router_navigate('team', { coach, team, season });
+  });
+
+  container.querySelector('#btn-share-summary')?.addEventListener('click', () => {
+    const lines = summary.players.map((ps, idx) => {
+      const mins = Math.floor(ps.totalOnTime / 60);
+      return `${ps.player.name}: ${mins}m (${pcts[idx]}%)`;
+    });
+    const text = `${_esc(teamName)}${opponent ? ` vs ${opponent}` : ''} — ${gameDate}\n${lines.join('\n')}\nEquity: ${stars}`;
+
+    if (navigator.share) {
+      navigator.share({ title: 'Game Summary', text }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(text).then(() => {
+        _showToast('Summary copied!');
+      }).catch(() => {
+        _showToast('Could not copy');
+      });
+    }
   });
 });
 
