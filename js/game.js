@@ -1733,8 +1733,8 @@ router_register('watch', async (container, { gameId }) => {
     return;
   }
 
-  const team   = game.seasons?.teams   || {};
-  const season = game.seasons           || {};
+  const team   = game.ctb_seasons?.ctb_teams   || {};
+  const season = game.ctb_seasons               || {};
 
   await _initGameState(game, roster, events, { coach: null, team, season });
   _gs.events = events.slice(); // store for elapsed-time derivation

@@ -23,13 +23,13 @@ router_register('stats', async (container, { coach, team, season } = {}) => {
 // ── STAT COMPUTATION ──────────────────────────────────────────
 
 function _computeStats(games, players) {
-  const playedGames = games.filter(g => g.game_events && g.game_events.length > 0);
+  const playedGames = games.filter(g => g.ctb_game_events && g.ctb_game_events.length > 0);
   const gamesPlayed = playedGames.length;
 
   // Total sub_on events across all games in the season
   let totalSubs = 0;
   for (const game of games) {
-    for (const evt of (game.game_events || [])) {
+    for (const evt of (game.ctb_game_events || [])) {
       if (evt.event_type === 'sub_on') totalSubs++;
     }
   }
@@ -41,8 +41,8 @@ function _computeStats(games, players) {
   }
 
   for (const game of games) {
-    const events = (game.game_events || []).slice().sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-    const roster = new Set((game.game_roster || []).map(r => r.player_id));
+    const events = (game.ctb_game_events || []).slice().sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    const roster = new Set((game.ctb_game_roster || []).map(r => r.player_id));
 
     if (!events.length) continue;
 

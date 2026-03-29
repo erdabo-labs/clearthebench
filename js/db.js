@@ -240,7 +240,7 @@ async function db_getGameRoster(gameId) {
     .eq('game_id', gameId);
 
   if (error) { console.error('db_getGameRoster', error); return []; }
-  return data.map(r => r.players);
+  return data.map(r => r.ctb_players);
 }
 
 // ── GAME EVENTS ───────────────────────────────────────────────
@@ -381,7 +381,7 @@ async function db_getActiveGame(seasonId) {
   if (error) { console.error('db_getActiveGame', error); return null; }
 
   for (const game of (data || [])) {
-    const evts = game.game_events || [];
+    const evts = game.ctb_game_events || [];
     if (evts.length > 0 && !evts.some(e => e.event_type === 'game_end')) {
       const { game_events, ...gameRow } = game;
       return gameRow;
@@ -497,7 +497,7 @@ async function db_getSeasonGamesWithStatus(seasonId) {
   if (error) { console.error('db_getSeasonGamesWithStatus', error); return []; }
 
   return (data || []).map(game => {
-    const events  = game.game_events || [];
+    const events  = game.ctb_game_events || [];
     const hasStart = events.some(e => e.event_type === 'game_start');
     const hasEnd   = events.some(e => e.event_type === 'game_end');
     const startEvt = events.find(e => e.event_type === 'game_start');
