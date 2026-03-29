@@ -214,6 +214,16 @@ router_register('create-game', async (container, { coach, team, season }) => {
       return;
     }
 
+    // Place first N players on field with sub_on events at timestamp 0
+    for (let i = 0; i < Math.min(fieldSize, playerIds.length); i++) {
+      await db_insertEvent({
+        gameId: game.id,
+        playerId: playerIds[i],
+        eventType: 'sub_on',
+        timestamp: 0,
+      });
+    }
+
     router_navigate('game', { gameId: game.id, coach, team, season });
   });
 });
