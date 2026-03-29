@@ -49,7 +49,7 @@ router_register('home', async (container, { coach } = {}) => {
   // Check for active games across all teams in parallel
   const activeGameChecks = await Promise.all(
     teams.map(async t => {
-      const activeSeason = t.seasons?.find(s => s.active);
+      const activeSeason = t.ctb_seasons?.find(s => s.active);
       if (!activeSeason) return null;
       const activeGame = await db_getActiveGame(activeSeason.id);
       return activeGame ? { team: t, season: activeSeason, game: activeGame } : null;
@@ -226,7 +226,7 @@ function _teamCardHTML(team) {
   const emoji = sport === 'soccer' ? '⚽' : sport === 'football' ? '🏈' : '🏅';
   const badgeClass = sport === 'soccer' ? 'badge-soccer' : sport === 'football' ? 'badge-football' : 'badge-generic';
   const badgeLabel = sport === 'soccer' ? 'SOCCER' : sport === 'football' ? 'FOOTBALL' : 'GENERIC';
-  const activeSeason = team.seasons?.find(s => s.active);
+  const activeSeason = team.ctb_seasons?.find(s => s.active);
   const seasonLabel = activeSeason ? activeSeason.name : 'No active season';
 
   return `
