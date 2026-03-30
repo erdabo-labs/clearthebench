@@ -40,14 +40,21 @@ function _showUndoToast(message, onUndo) {
 function _playAlertTone() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = 880;
-    gain.gain.value = 0.3;
-    osc.start();
-    osc.stop(ctx.currentTime + 0.2);
+    // Three ascending beeps — hard to miss
+    const notes = [660, 880, 1100];
+    const beepLen = 0.15;
+    const gap = 0.1;
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      gain.gain.value = 0.5;
+      const start = ctx.currentTime + i * (beepLen + gap);
+      osc.start(start);
+      osc.stop(start + beepLen);
+    });
   } catch (e) { /* ignore */ }
 }
 
@@ -318,6 +325,9 @@ router_register('game', async (container, params) => {
   // Clean up previous game state
   if (_gs) {
     clearInterval(_gs.timerInterval);
+    if (_gs.visibilityHandler) {
+      document.removeEventListener('visibilitychange', _gs.visibilityHandler);
+    }
     _releaseWakeLock();
     _gs = null;
   }
@@ -630,7 +640,10 @@ function _bindGameControls() {
 
 async function _handleStartPause() {
   if (_gs.timerRunning) {
-    // Pause
+    // Pause — sync from wall clock one last time
+    if (_gs.wallAnchor) {
+      _gs.timerSeconds = _gs.timerAnchor + Math.floor((Date.now() - _gs.wallAnchor) / 1000);
+    }
     await db_insertEvent({
       gameId: _gs.game.id,
       playerId: null,
@@ -640,6 +653,8 @@ async function _handleStartPause() {
     _gs.timerRunning = false;
     clearInterval(_gs.timerInterval);
     _gs.timerInterval = null;
+    _gs.wallAnchor = null;
+    _gs.timerAnchor = null;
     _releaseWakeLock();
     _updateClockDisplay();
     _saveCrashRecovery();
@@ -665,8 +680,14 @@ async function _handleStartPause() {
 
 function _startTimerInterval() {
   if (_gs.timerInterval) clearInterval(_gs.timerInterval);
+
+  // Wall-clock anchoring: remember when we started and what the timer read
+  _gs.wallAnchor = Date.now();
+  _gs.timerAnchor = _gs.timerSeconds;
+
   _gs.timerInterval = setInterval(() => {
-    _gs.timerSeconds++;
+    // Derive timer from wall clock — immune to background throttling
+    _gs.timerSeconds = _gs.timerAnchor + Math.floor((Date.now() - _gs.wallAnchor) / 1000);
 
     // Update current stints for field players
     for (const ps of Object.values(_gs.players)) {
@@ -679,6 +700,27 @@ function _startTimerInterval() {
     _updatePlayerTimes();
     _checkRotationAlert();
   }, 1000);
+
+  // Catch up immediately when returning from background
+  if (!_gs.visibilityHandler) {
+    _gs.visibilityHandler = () => {
+      if (document.visibilityState === 'visible' && _gs.timerRunning && _gs.wallAnchor) {
+        _gs.timerSeconds = _gs.timerAnchor + Math.floor((Date.now() - _gs.wallAnchor) / 1000);
+        for (const ps of Object.values(_gs.players)) {
+          if (ps.onField && ps.fieldEnteredAt !== null) {
+            ps.currentStint = _gs.timerSeconds - ps.fieldEnteredAt;
+          }
+        }
+        _updateClockDisplay();
+        _updatePlayerTimes();
+        _checkRotationAlert();
+
+        // Re-acquire wake lock (iOS/Android release it on background)
+        _requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', _gs.visibilityHandler);
+  }
 }
 
 function _updateClockDisplay() {
@@ -760,8 +802,14 @@ function _updateCountdown() {
   }
 
   const elapsed = _gs.timerSeconds - _gs.lastAlertAt;
-  const remaining = Math.max(0, _gs.alertInterval - elapsed);
-  el.textContent = 'Next rotation in ' + _fmt(remaining);
+  const remaining = _gs.alertInterval - elapsed;
+  if (remaining > 0) {
+    el.textContent = 'Next rotation in ' + _fmt(remaining);
+    el.classList.remove('overdue');
+  } else {
+    el.textContent = 'OVERDUE +' + _fmt(Math.abs(remaining));
+    el.classList.add('overdue');
+  }
 }
 
 function _checkRotationAlert() {
@@ -847,25 +895,31 @@ function _calculateProposedSwaps() {
   for (let i = 0; i < swapCount; i++) {
     pairs.push({ out: field[i], in: bench[i] });
   }
-  return pairs;
+
+  // Unmatched extras on whichever side has more
+  const stayingField = field.slice(swapCount);
+  const stayingBench = bench.slice(swapCount);
+
+  return { pairs, stayingField, stayingBench };
 }
 
 function _showSwapPreview(isAlert) {
-  const pairs = _calculateProposedSwaps();
-  if (pairs.length === 0) {
+  const result = _calculateProposedSwaps();
+  if (result.pairs.length === 0) {
     _showToast('No bench players to rotate');
     return;
   }
 
-  _gs.proposedPairs = pairs;
+  _gs.proposedSwaps = result;
 
   const pairsEl = _gs.container.querySelector('#preview-pairs');
   let html = '';
-  for (const p of pairs) {
+  for (let i = 0; i < result.pairs.length; i++) {
+    const p = result.pairs[i];
     const outTime = _fmt(_getPlayedTime(p.out));
     const inWait = _fmt(_getBenchWait(p.in));
     html += `
-      <div class="preview-pair">
+      <div class="preview-pair" data-pair-idx="${i}">
         <div class="preview-out">
           <span class="preview-label">OUT</span>
           <span class="preview-name">${_esc(p.out.name)}</span>
@@ -879,26 +933,106 @@ function _showSwapPreview(isAlert) {
       </div>
     `;
   }
+
+  // Show staying players if sides are uneven
+  if (result.stayingField.length > 0) {
+    html += '<div class="preview-staying-title">STAYING ON FIELD</div>';
+    html += '<div class="preview-staying-hint">Tap a staying player, then tap a swapping player above to trade spots</div>';
+    for (const ps of result.stayingField) {
+      html += `
+        <div class="preview-staying field" data-staying-id="${ps.id}">
+          <span class="preview-staying-name">${_esc(ps.name)}</span>
+          <span class="preview-time">${_fmt(_getPlayedTime(ps))} played</span>
+        </div>
+      `;
+    }
+  }
+  if (result.stayingBench.length > 0) {
+    html += '<div class="preview-staying-title">STAYING ON BENCH</div>';
+    html += '<div class="preview-staying-hint">Tap a staying player, then tap a swapping player above to trade spots</div>';
+    for (const ps of result.stayingBench) {
+      html += `
+        <div class="preview-staying bench" data-staying-id="${ps.id}">
+          <span class="preview-staying-name">${_esc(ps.name)}</span>
+          <span class="preview-time">${_fmt(_getBenchWait(ps))} waiting</span>
+        </div>
+      `;
+    }
+  }
+
   pairsEl.innerHTML = html;
+
+  // Bind staying player tap → then pair tap to trade
+  _gs.pendingStaying = null;
+  pairsEl.querySelectorAll('.preview-staying').forEach(el => {
+    el.addEventListener('click', () => {
+      // Toggle selection
+      pairsEl.querySelectorAll('.preview-staying').forEach(s => s.classList.remove('selected'));
+      if (_gs.pendingStaying === el.dataset.stayingId) {
+        _gs.pendingStaying = null;
+      } else {
+        _gs.pendingStaying = el.dataset.stayingId;
+        el.classList.add('selected');
+      }
+    });
+  });
+
+  pairsEl.querySelectorAll('.preview-pair').forEach(el => {
+    el.addEventListener('click', () => {
+      if (!_gs.pendingStaying) return;
+      const idx = parseInt(el.dataset.pairIdx);
+      const pair = _gs.proposedSwaps.pairs[idx];
+      const stayingPs = _gs.players[_gs.pendingStaying];
+      if (!stayingPs || !pair) return;
+
+      // Determine if the staying player is field or bench
+      if (stayingPs.onField) {
+        // Swap the "out" player: staying field player takes the spot of the paired field player
+        // The paired field player becomes "staying" instead
+        const oldOut = pair.out;
+        _gs.proposedSwaps.stayingField = _gs.proposedSwaps.stayingField.filter(p => p.id !== stayingPs.id);
+        _gs.proposedSwaps.stayingField.push(oldOut);
+        pair.out = stayingPs;
+      } else {
+        // Swap the "in" player: staying bench player takes the spot of the paired bench player
+        const oldIn = pair.in;
+        _gs.proposedSwaps.stayingBench = _gs.proposedSwaps.stayingBench.filter(p => p.id !== stayingPs.id);
+        _gs.proposedSwaps.stayingBench.push(oldIn);
+        pair.in = stayingPs;
+      }
+
+      _gs.pendingStaying = null;
+      // Re-render the preview with updated swaps
+      _showSwapPreview(false);
+    });
+  });
 
   const overlay = _gs.container.querySelector('#swap-preview');
   if (overlay) overlay.style.display = '';
 
   if (isAlert) {
-    try { navigator.vibrate([200, 100, 200]); } catch (e) { /* ignore */ }
+    try { navigator.vibrate([200, 100, 200, 100, 200]); } catch (e) { /* ignore */ }
     _playAlertTone();
+    // Flash the screen border for visibility
+    const screen = _gs.container.querySelector('.screen');
+    if (screen) {
+      screen.classList.add('alert-flash');
+      setTimeout(() => screen.classList.remove('alert-flash'), 2000);
+    }
   }
 }
 
 function _hideSwapPreview() {
-  _gs.proposedPairs = null;
+  _gs.proposedSwaps = null;
+  _gs.pendingStaying = null;
   const overlay = _gs.container.querySelector('#swap-preview');
   if (overlay) overlay.style.display = 'none';
 }
 
 async function _handleConfirmRotation() {
-  // Recalculate fresh to avoid stale state from preview
-  const pairs = _calculateProposedSwaps();
+  // Use the (possibly user-edited) proposed swaps, or recalculate if missing
+  const result = _gs.proposedSwaps || _calculateProposedSwaps();
+  const pairs = result.pairs || result;
   if (pairs.length === 0) return;
 
   _hideSwapPreview();
