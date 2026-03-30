@@ -1061,6 +1061,22 @@ html, body {
   margin-bottom: 16px;
 }
 
+.preview-countdown {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--orange);
+  text-align: center;
+  margin-bottom: 12px;
+  min-height: 20px;
+  letter-spacing: 0.5px;
+}
+
+.preview-countdown.overdue {
+  color: var(--red);
+  animation: timer-flash 0.8s ease-in-out infinite;
+}
+
 .preview-pairs {
   display: flex;
   flex-direction: column;
@@ -1076,6 +1092,12 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.preview-pair:active {
+  border-color: var(--orange);
 }
 
 .preview-out,
