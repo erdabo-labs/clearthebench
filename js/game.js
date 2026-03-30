@@ -482,6 +482,7 @@ function _renderGameScreen() {
             <button class="btn-ghost" id="btn-start-pause">${_gs.timerRunning ? 'PAUSE' : 'START'}</button>
           </div>
         </div>
+        <div class="rotation-countdown" id="rotation-countdown"></div>
         <button class="btn-rotate" id="btn-rotate">ROTATE</button>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
@@ -500,33 +501,31 @@ function _renderGameScreen() {
   _renderFieldZone();
   _renderBenchZone();
   _bindGameControls();
+  _updateCountdown();
 }
 
 function _getFieldPlayers() {
   return Object.values(_gs.players)
     .filter(p => p.onField)
-    .sort((a, b) => (b.totalOnTime + b.currentStint) - (a.totalOnTime + a.currentStint));
+    .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
 }
 
 function _getBenchPlayers() {
   return Object.values(_gs.players)
     .filter(p => !p.onField)
-    .sort((a, b) => {
-      const aWait = _gs.timerSeconds - a.benchSince + a.totalBenchTime - _getBenchAccum(a);
-      const bWait = _gs.timerSeconds - b.benchSince + b.totalBenchTime - _getBenchAccum(b);
-      return bWait - aWait;
-    });
+    .sort((a, b) => _getBenchWait(b) - _getBenchWait(a));
 }
 
-// Get current bench wait for sorting: total bench time + current wait
+// Get cumulative bench time including current bench stint
 function _getBenchWait(ps) {
-  if (ps.onField) return 0;
-  return _gs.timerSeconds - ps.benchSince;
+  if (ps.onField) return ps.totalBenchTime;
+  return ps.totalBenchTime + (_gs.timerSeconds - ps.benchSince);
 }
 
-// Accumulated bench time not counting current stint
-function _getBenchAccum(ps) {
-  return 0; // totalBenchTime already includes accumulated
+// Get cumulative played time including current field stint
+function _getPlayedTime(ps) {
+  if (!ps.onField) return ps.totalOnTime;
+  return ps.totalOnTime + ps.currentStint;
 }
 
 function _renderFieldZone() {
@@ -538,11 +537,13 @@ function _renderFieldZone() {
 
   let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
   for (const ps of fieldPlayers) {
-    const totalTime = ps.totalOnTime + ps.currentStint;
+    const totalPlayed = _getPlayedTime(ps);
+    const totalBench = _getBenchWait(ps);
     html += `
       <div class="player-chip" data-player-id="${ps.id}">
         <span>${_esc(ps.name)}</span>
-        <span class="chip-time">${_fmt(ps.currentStint)} / ${_fmt(totalTime)}</span>
+        <span class="chip-time">${_fmt(ps.currentStint)} / ${_fmt(totalPlayed)}</span>
+        <span class="chip-bench">B ${_fmt(totalBench)}</span>
       </div>
     `;
   }
@@ -567,12 +568,14 @@ function _renderBenchZone() {
 
   let html = '<div class="zone-title">BENCH (' + count + ')</div>';
   for (const ps of benchPlayers) {
-    const wait = _getBenchWait(ps);
+    const totalBench = _getBenchWait(ps);
+    const totalPlayed = _getPlayedTime(ps);
     const isSelected = _gs.pendingBenchPlayer === ps.id;
     html += `
       <div class="bench-player${isSelected ? ' selected' : ''}" data-player-id="${ps.id}">
         <span class="bench-name">${_esc(ps.name)}</span>
-        <span class="bench-wait">${_fmt(wait)}</span>
+        <span class="bench-played">P ${_fmt(totalPlayed)}</span>
+        <span class="bench-wait">${_fmt(totalBench)}</span>
       </div>
     `;
   }
@@ -685,14 +688,15 @@ function _updatePlayerTimes() {
     fieldZone.querySelectorAll('.player-chip').forEach(chip => {
       const ps = _gs.players[chip.dataset.playerId];
       if (ps) {
-        const totalTime = ps.totalOnTime + ps.currentStint;
         const timeEl = chip.querySelector('.chip-time');
-        if (timeEl) timeEl.textContent = _fmt(ps.currentStint) + ' / ' + _fmt(totalTime);
+        if (timeEl) timeEl.textContent = _fmt(ps.currentStint) + ' / ' + _fmt(_getPlayedTime(ps));
+        const benchEl = chip.querySelector('.chip-bench');
+        if (benchEl) benchEl.textContent = 'B ' + _fmt(_getBenchWait(ps));
       }
     });
   }
 
-  // Update bench player wait times
+  // Update bench player times
   const benchZone = _gs.container.querySelector('#bench-zone');
   if (benchZone) {
     benchZone.querySelectorAll('.bench-player').forEach(row => {
@@ -700,9 +704,34 @@ function _updatePlayerTimes() {
       if (ps) {
         const waitEl = row.querySelector('.bench-wait');
         if (waitEl) waitEl.textContent = _fmt(_getBenchWait(ps));
+        const playedEl = row.querySelector('.bench-played');
+        if (playedEl) playedEl.textContent = 'P ' + _fmt(_getPlayedTime(ps));
       }
     });
   }
+
+  // Update rotation countdown
+  _updateCountdown();
+}
+
+function _updateCountdown() {
+  const el = _gs.container.querySelector('#rotation-countdown');
+  if (!el) return;
+
+  if (!_gs.timerRunning || _gs.alertInterval <= 0) {
+    el.textContent = '';
+    return;
+  }
+
+  const benchCount = Object.values(_gs.players).filter(p => !p.onField).length;
+  if (benchCount === 0) {
+    el.textContent = '';
+    return;
+  }
+
+  const elapsed = _gs.timerSeconds - _gs.lastAlertAt;
+  const remaining = Math.max(0, _gs.alertInterval - elapsed);
+  el.textContent = 'Next rotation in ' + _fmt(remaining);
 }
 
 function _checkRotationAlert() {
@@ -773,7 +802,7 @@ async function _handleFieldPlayerTap(fieldPlayerId) {
 function _calculateProposedSwaps() {
   const field = Object.values(_gs.players)
     .filter(p => p.onField)
-    .sort((a, b) => (b.totalOnTime + b.currentStint) - (a.totalOnTime + a.currentStint));
+    .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
 
   const bench = Object.values(_gs.players)
     .filter(p => !p.onField)
@@ -799,7 +828,7 @@ function _showSwapPreview(isAlert) {
   const pairsEl = _gs.container.querySelector('#preview-pairs');
   let html = '';
   for (const p of pairs) {
-    const outTime = _fmt(p.out.totalOnTime + p.out.currentStint);
+    const outTime = _fmt(_getPlayedTime(p.out));
     const inWait = _fmt(_getBenchWait(p.in));
     html += `
       <div class="preview-pair">
