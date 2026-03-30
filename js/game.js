@@ -486,6 +486,7 @@ function _renderGameScreen() {
         <button class="btn-rotate" id="btn-rotate">ROTATE</button>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
+        <div class="team-stats" id="team-stats"></div>
       </div>
       <div class="swap-preview-overlay" id="swap-preview" style="display:none">
         <div class="swap-preview-sheet">
@@ -500,6 +501,7 @@ function _renderGameScreen() {
 
   _renderFieldZone();
   _renderBenchZone();
+  _renderTeamStats();
   _bindGameControls();
   _updateCountdown();
 }
@@ -537,13 +539,10 @@ function _renderFieldZone() {
 
   let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
   for (const ps of fieldPlayers) {
-    const totalPlayed = _getPlayedTime(ps);
-    const totalBench = _getBenchWait(ps);
     html += `
       <div class="player-chip" data-player-id="${ps.id}">
         <span>${_esc(ps.name)}</span>
-        <span class="chip-time">${_fmt(ps.currentStint)} / ${_fmt(totalPlayed)}</span>
-        <span class="chip-bench">B ${_fmt(totalBench)}</span>
+        <span class="chip-time">${_fmt(ps.currentStint)}</span>
       </div>
     `;
   }
@@ -568,14 +567,12 @@ function _renderBenchZone() {
 
   let html = '<div class="zone-title">BENCH (' + count + ')</div>';
   for (const ps of benchPlayers) {
-    const totalBench = _getBenchWait(ps);
-    const totalPlayed = _getPlayedTime(ps);
+    const currentWait = _gs.timerSeconds - ps.benchSince;
     const isSelected = _gs.pendingBenchPlayer === ps.id;
     html += `
       <div class="bench-player${isSelected ? ' selected' : ''}" data-player-id="${ps.id}">
         <span class="bench-name">${_esc(ps.name)}</span>
-        <span class="bench-played">P ${_fmt(totalPlayed)}</span>
-        <span class="bench-wait">${_fmt(totalBench)}</span>
+        <span class="bench-wait">${_fmt(currentWait)}</span>
       </div>
     `;
   }
@@ -587,6 +584,29 @@ function _renderBenchZone() {
       _handleBenchPlayerTap(row.dataset.playerId);
     });
   });
+}
+
+function _renderTeamStats() {
+  const zone = _gs.container.querySelector('#team-stats');
+  if (!zone) return;
+
+  const allPlayers = Object.values(_gs.players)
+    .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
+
+  let html = '<div class="zone-title">PLAYER STATS</div>';
+  html += '<div class="stats-header"><span class="stats-name-header">Player</span><span class="stats-col-header">Played</span><span class="stats-col-header">Benched</span></div>';
+  for (const ps of allPlayers) {
+    const played = _getPlayedTime(ps);
+    const benched = _getBenchWait(ps);
+    html += `
+      <div class="stats-row" data-player-id="${ps.id}">
+        <span class="stats-name">${_esc(ps.name)}</span>
+        <span class="stats-played">${_fmt(played)}</span>
+        <span class="stats-benched">${_fmt(benched)}</span>
+      </div>
+    `;
+  }
+  zone.innerHTML = html;
 }
 
 function _bindGameControls() {
@@ -682,30 +702,40 @@ function _updateClockDisplay() {
 }
 
 function _updatePlayerTimes() {
-  // Update field player chip times
+  // Update field player stint times
   const fieldZone = _gs.container.querySelector('#field-zone');
   if (fieldZone) {
     fieldZone.querySelectorAll('.player-chip').forEach(chip => {
       const ps = _gs.players[chip.dataset.playerId];
       if (ps) {
         const timeEl = chip.querySelector('.chip-time');
-        if (timeEl) timeEl.textContent = _fmt(ps.currentStint) + ' / ' + _fmt(_getPlayedTime(ps));
-        const benchEl = chip.querySelector('.chip-bench');
-        if (benchEl) benchEl.textContent = 'B ' + _fmt(_getBenchWait(ps));
+        if (timeEl) timeEl.textContent = _fmt(ps.currentStint);
       }
     });
   }
 
-  // Update bench player times
+  // Update bench player wait times (current stint only)
   const benchZone = _gs.container.querySelector('#bench-zone');
   if (benchZone) {
     benchZone.querySelectorAll('.bench-player').forEach(row => {
       const ps = _gs.players[row.dataset.playerId];
       if (ps) {
         const waitEl = row.querySelector('.bench-wait');
-        if (waitEl) waitEl.textContent = _fmt(_getBenchWait(ps));
-        const playedEl = row.querySelector('.bench-played');
-        if (playedEl) playedEl.textContent = 'P ' + _fmt(_getPlayedTime(ps));
+        if (waitEl) waitEl.textContent = _fmt(_gs.timerSeconds - ps.benchSince);
+      }
+    });
+  }
+
+  // Update team stats
+  const statsZone = _gs.container.querySelector('#team-stats');
+  if (statsZone) {
+    statsZone.querySelectorAll('.stats-row').forEach(row => {
+      const ps = _gs.players[row.dataset.playerId];
+      if (ps) {
+        const playedEl = row.querySelector('.stats-played');
+        if (playedEl) playedEl.textContent = _fmt(_getPlayedTime(ps));
+        const benchedEl = row.querySelector('.stats-benched');
+        if (benchedEl) benchedEl.textContent = _fmt(_getBenchWait(ps));
       }
     });
   }
@@ -792,8 +822,12 @@ async function _handleFieldPlayerTap(fieldPlayerId) {
   };
   _gs.pendingBenchPlayer = null;
 
+  // Reset countdown so next rotation gets full interval
+  _gs.lastAlertAt = ts;
+
   _renderFieldZone();
   _renderBenchZone();
+  _renderTeamStats();
   _saveCrashRecovery();
 
   _showUndoToast('Swapped ' + benchPs.name + ' \u2192 ' + fieldPs.name, _handleUndo);
@@ -863,8 +897,11 @@ function _hideSwapPreview() {
 }
 
 async function _handleConfirmRotation() {
-  const pairs = _gs.proposedPairs;
-  if (!pairs || pairs.length === 0) return;
+  // Recalculate fresh to avoid stale state from preview
+  const pairs = _calculateProposedSwaps();
+  if (pairs.length === 0) return;
+
+  _hideSwapPreview();
 
   const ts = _gs.timerSeconds;
   const swapPairs = [];
@@ -889,9 +926,12 @@ async function _handleConfirmRotation() {
 
   _gs.lastSwap = { type: 'swap_all', count: pairs.length * 2, pairs: swapPairs };
 
-  _hideSwapPreview();
+  // Reset countdown so next rotation gets full interval from now
+  _gs.lastAlertAt = ts;
+
   _renderFieldZone();
   _renderBenchZone();
+  _renderTeamStats();
   _saveCrashRecovery();
 
   _showUndoToast('Rotated ' + pairs.length + ' players', _handleUndo);

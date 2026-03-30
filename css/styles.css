@@ -858,15 +858,8 @@ html, body {
 
 .player-chip .chip-time {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-}
-
-.player-chip .chip-bench {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--orange);
-  opacity: 0.8;
 }
 
 .player-chip:active {
@@ -902,17 +895,10 @@ html, body {
   color: var(--text);
 }
 
-.bench-player .bench-played {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--lime-dim);
-  flex-shrink: 0;
-}
-
 .bench-player .bench-wait {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
-  color: var(--orange);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -921,6 +907,77 @@ html, body {
   border-radius: var(--radius-sm);
   outline: 2px solid var(--orange);
   outline-offset: -2px;
+}
+
+/* ── TEAM STATS ────────────────────────────────────────────── */
+
+.team-stats {
+  padding: 14px 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+
+.stats-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.stats-name-header {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.stats-col-header {
+  width: 54px;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.stats-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+}
+
+.stats-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stats-played {
+  width: 54px;
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--lime);
+}
+
+.stats-benched {
+  width: 54px;
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--orange);
 }
 
 /* ── ROTATION COUNTDOWN ────────────────────────────────────── */
