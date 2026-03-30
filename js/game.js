@@ -115,39 +115,51 @@ router_register('create-game', async (container, { coach, team, season }) => {
           <div class="header-action" id="btn-back">&#8592;</div>
         </div>
 
-        <div class="section-title">NEW GAME</div>
+        <div id="create-step-1">
+          <div class="section-title">NEW GAME</div>
 
-        <div class="pregame-section">
-          <div class="pregame-label">OPPONENT (OPTIONAL)</div>
-          <input class="input-field" id="opponent-input" type="text"
-            placeholder="e.g. Blue Sharks" autocomplete="off" maxlength="40" />
-        </div>
-
-        <div class="pregame-section">
-          <div class="pregame-label">PLAYERS ON FIELD</div>
-          <div class="stepper">
-            <button class="stepper-btn" id="field-minus">&minus;</button>
-            <div class="stepper-value" id="field-value">${fieldSize}</div>
-            <button class="stepper-btn" id="field-plus">+</button>
+          <div class="pregame-section">
+            <div class="pregame-label">OPPONENT (OPTIONAL)</div>
+            <input class="input-field" id="opponent-input" type="text"
+              placeholder="e.g. Blue Sharks" autocomplete="off" maxlength="40" />
           </div>
-        </div>
 
-        <div class="pregame-section">
-          <div class="pregame-label">ROTATION INTERVAL (MINUTES)</div>
-          <div class="stepper">
-            <button class="stepper-btn" id="interval-minus">&minus;</button>
-            <div class="stepper-value" id="interval-value">${intervalMin}</div>
-            <button class="stepper-btn" id="interval-plus">+</button>
+          <div class="pregame-section">
+            <div class="pregame-label">PLAYERS ON FIELD</div>
+            <div class="stepper">
+              <button class="stepper-btn" id="field-minus">&minus;</button>
+              <div class="stepper-value" id="field-value">${fieldSize}</div>
+              <button class="stepper-btn" id="field-plus">+</button>
+            </div>
           </div>
+
+          <div class="pregame-section">
+            <div class="pregame-label">ROTATION INTERVAL (MINUTES)</div>
+            <div class="stepper">
+              <button class="stepper-btn" id="interval-minus">&minus;</button>
+              <div class="stepper-value" id="interval-value">${intervalMin}</div>
+              <button class="stepper-btn" id="interval-plus">+</button>
+            </div>
+          </div>
+
+          <div class="pregame-section">
+            <div class="pregame-label">ATTENDANCE</div>
+            <div class="attendance-list" id="attendance-list">${playerRows}</div>
+          </div>
+
+          <button class="btn-primary" id="btn-next-step">NEXT</button>
+          <div id="create-game-msg" class="form-msg"></div>
         </div>
 
-        <div class="pregame-section">
-          <div class="pregame-label">ATTENDANCE</div>
-          <div class="attendance-list" id="attendance-list">${playerRows}</div>
+        <div id="create-step-2" style="display:none">
+          <div class="section-title">STARTING LINEUP</div>
+          <div class="lineup-info">Tap to move between field and bench</div>
+          <div class="lineup-count" id="lineup-count"></div>
+          <div class="lineup-list" id="lineup-list"></div>
+          <button class="btn-primary" id="btn-start-game" disabled>START GAME</button>
+          <div id="lineup-msg" class="form-msg"></div>
+          <button class="btn-ghost" id="btn-back-step" style="margin-top:12px">&#8592; BACK</button>
         </div>
-
-        <button class="btn-primary" id="btn-start-game">START GAME</button>
-        <div id="create-game-msg" class="form-msg"></div>
       </div>
     </div>
   `;
@@ -180,9 +192,59 @@ router_register('create-game', async (container, { coach, team, season }) => {
     });
   });
 
-  // Start game
+  // Lineup state for step 2
+  let lineupState = {};
+
+  function renderLineup() {
+    const list = container.querySelector('#lineup-list');
+    const countEl = container.querySelector('#lineup-count');
+    const startBtn = container.querySelector('#btn-start-game');
+    const ids = Object.keys(lineupState);
+    const fieldCount = ids.filter(id => lineupState[id] === 'field').length;
+
+    countEl.textContent = fieldCount + ' / ' + fieldSize + ' on field';
+    countEl.className = 'lineup-count' + (fieldCount === fieldSize ? '' : ' over');
+    startBtn.disabled = fieldCount !== fieldSize;
+
+    let html = '';
+    // Show field players first, then bench
+    const sorted = ids.slice().sort((a, b) => {
+      if (lineupState[a] === lineupState[b]) return 0;
+      return lineupState[a] === 'field' ? -1 : 1;
+    });
+    for (const id of sorted) {
+      const p = players.find(pl => pl.id === id);
+      if (!p) continue;
+      const isField = lineupState[id] === 'field';
+      const jersey = p.jersey_number ? '#' + _esc(p.jersey_number) : '';
+      html += `
+        <div class="lineup-row ${isField ? 'field' : 'bench'}" data-player-id="${id}">
+          <div class="player-info">
+            <div class="player-name-text">${_esc(p.name)}</div>
+            ${jersey ? '<div class="player-jersey">' + jersey + '</div>' : ''}
+          </div>
+          <div class="lineup-badge">${isField ? 'FIELD' : 'BENCH'}</div>
+        </div>
+      `;
+    }
+    list.innerHTML = html;
+
+    list.querySelectorAll('.lineup-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const pid = row.dataset.playerId;
+        if (lineupState[pid] === 'field') {
+          lineupState[pid] = 'bench';
+        } else if (ids.filter(id => lineupState[id] === 'field').length < fieldSize) {
+          lineupState[pid] = 'field';
+        }
+        renderLineup();
+      });
+    });
+  }
+
+  // Next button -> show lineup picker
   const msgEl = container.querySelector('#create-game-msg');
-  container.querySelector('#btn-start-game').addEventListener('click', async () => {
+  container.querySelector('#btn-next-step').addEventListener('click', () => {
     const checked = container.querySelectorAll('.attendance-row.checked');
     const playerIds = Array.from(checked).map(r => r.dataset.playerId);
 
@@ -191,6 +253,28 @@ router_register('create-game', async (container, { coach, team, season }) => {
       msgEl.className = 'form-msg error';
       return;
     }
+
+    lineupState = {};
+    playerIds.forEach((id, i) => {
+      lineupState[id] = i < fieldSize ? 'field' : 'bench';
+    });
+
+    container.querySelector('#create-step-1').style.display = 'none';
+    container.querySelector('#create-step-2').style.display = '';
+    renderLineup();
+  });
+
+  // Back button in step 2
+  container.querySelector('#btn-back-step').addEventListener('click', () => {
+    container.querySelector('#create-step-2').style.display = 'none';
+    container.querySelector('#create-step-1').style.display = '';
+  });
+
+  // Start game from step 2
+  container.querySelector('#btn-start-game').addEventListener('click', async () => {
+    const allPlayerIds = Object.keys(lineupState);
+    const fieldCount = allPlayerIds.filter(id => lineupState[id] === 'field').length;
+    if (fieldCount !== fieldSize) return;
 
     const opponent = container.querySelector('#opponent-input').value.trim();
     const btn = container.querySelector('#btn-start-game');
@@ -203,22 +287,22 @@ router_register('create-game', async (container, { coach, team, season }) => {
       mode: 'timer_swap',
       fieldSize,
       strategySnapshot: { mode: 'timer_swap', config: { intervalMinutes: intervalMin } },
-      playerIds,
+      playerIds: allPlayerIds,
     });
 
     if (!game) {
       btn.disabled = false;
       btn.textContent = 'START GAME';
-      msgEl.textContent = 'Something went wrong. Try again.';
-      msgEl.className = 'form-msg error';
+      const lmsg = container.querySelector('#lineup-msg');
+      if (lmsg) { lmsg.textContent = 'Something went wrong. Try again.'; lmsg.className = 'form-msg error'; }
       return;
     }
 
-    // Place first N players on field with sub_on events at timestamp 0
-    for (let i = 0; i < Math.min(fieldSize, playerIds.length); i++) {
+    const fieldPlayerIds = allPlayerIds.filter(id => lineupState[id] === 'field');
+    for (const pid of fieldPlayerIds) {
       await db_insertEvent({
         gameId: game.id,
-        playerId: playerIds[i],
+        playerId: pid,
         eventType: 'sub_on',
         timestamp: 0,
       });
@@ -280,7 +364,7 @@ router_register('game', async (container, params) => {
     lastSwap: null,
     container,
     alertInterval,
-    swapAllVisible: false,
+    proposedPairs: null,
     wakeLock: null,
     lastAlertAt: 0,
   };
@@ -398,13 +482,17 @@ function _renderGameScreen() {
             <button class="btn-ghost" id="btn-start-pause">${_gs.timerRunning ? 'PAUSE' : 'START'}</button>
           </div>
         </div>
+        <button class="btn-rotate" id="btn-rotate">ROTATE</button>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
       </div>
-      <div class="swap-all-banner" id="swap-banner" style="display:${_gs.swapAllVisible ? 'block' : 'none'}">
-        <div class="banner-text">TIME TO ROTATE</div>
-        <button class="btn-swap-all" id="btn-swap-all">SWAP ALL</button>
-        <button class="btn-dismiss" id="btn-dismiss-banner">Dismiss</button>
+      <div class="swap-preview-overlay" id="swap-preview" style="display:none">
+        <div class="swap-preview-sheet">
+          <div class="preview-title">PROPOSED ROTATION</div>
+          <div class="preview-pairs" id="preview-pairs"></div>
+          <button class="btn-primary" id="btn-confirm-rotate">ROTATE NOW</button>
+          <button class="btn-ghost" id="btn-cancel-rotate" style="margin-top:8px">Cancel</button>
+        </div>
       </div>
     </div>
   `;
@@ -507,15 +595,14 @@ function _bindGameControls() {
   // End game
   c.querySelector('#btn-end-game')?.addEventListener('click', _handleEndGame);
 
-  // Swap all
-  c.querySelector('#btn-swap-all')?.addEventListener('click', _handleSwapAll);
+  // Rotate button
+  c.querySelector('#btn-rotate')?.addEventListener('click', () => _showSwapPreview(false));
 
-  // Dismiss banner
-  c.querySelector('#btn-dismiss-banner')?.addEventListener('click', () => {
-    _gs.swapAllVisible = false;
-    const banner = c.querySelector('#swap-banner');
-    if (banner) banner.style.display = 'none';
-  });
+  // Confirm rotation
+  c.querySelector('#btn-confirm-rotate')?.addEventListener('click', _handleConfirmRotation);
+
+  // Cancel rotation
+  c.querySelector('#btn-cancel-rotate')?.addEventListener('click', _hideSwapPreview);
 }
 
 async function _handleStartPause() {
@@ -627,13 +714,7 @@ function _checkRotationAlert() {
 
   if (_gs.timerSeconds >= _gs.lastAlertAt + _gs.alertInterval) {
     _gs.lastAlertAt = Math.floor(_gs.timerSeconds / _gs.alertInterval) * _gs.alertInterval;
-    _gs.swapAllVisible = true;
-
-    const banner = _gs.container.querySelector('#swap-banner');
-    if (banner) banner.style.display = 'block';
-
-    try { navigator.vibrate([200, 100, 200]); } catch (e) { /* ignore */ }
-    _playAlertTone();
+    _showSwapPreview(true);
   }
 }
 
@@ -689,55 +770,102 @@ async function _handleFieldPlayerTap(fieldPlayerId) {
   _showUndoToast('Swapped ' + benchPs.name + ' \u2192 ' + fieldPs.name, _handleUndo);
 }
 
-async function _handleSwapAll() {
-  const fieldPlayers = Object.values(_gs.players)
+function _calculateProposedSwaps() {
+  const field = Object.values(_gs.players)
     .filter(p => p.onField)
     .sort((a, b) => (b.totalOnTime + b.currentStint) - (a.totalOnTime + a.currentStint));
 
-  const benchPlayers = Object.values(_gs.players)
+  const bench = Object.values(_gs.players)
     .filter(p => !p.onField)
     .sort((a, b) => _getBenchWait(b) - _getBenchWait(a));
 
-  const swapCount = Math.min(benchPlayers.length, fieldPlayers.length);
-  if (swapCount === 0) return;
-
-  const ts = _gs.timerSeconds;
+  const swapCount = Math.min(bench.length, field.length);
   const pairs = [];
-
   for (let i = 0; i < swapCount; i++) {
-    const fp = fieldPlayers[i];
-    const bp = benchPlayers[i];
+    pairs.push({ out: field[i], in: bench[i] });
+  }
+  return pairs;
+}
 
-    await db_insertEvent({ gameId: _gs.game.id, playerId: fp.id, eventType: 'sub_off', timestamp: ts });
-    await db_insertEvent({ gameId: _gs.game.id, playerId: bp.id, eventType: 'sub_on', timestamp: ts });
-
-    // Update field player -> bench
-    fp.totalOnTime += Math.max(0, ts - (fp.fieldEnteredAt || 0));
-    fp.onField = false;
-    fp.fieldEnteredAt = null;
-    fp.currentStint = 0;
-    fp.benchSince = ts;
-
-    // Update bench player -> field
-    bp.totalBenchTime += Math.max(0, ts - bp.benchSince);
-    bp.onField = true;
-    bp.fieldEnteredAt = ts;
-    bp.currentStint = 0;
-
-    pairs.push({ benchId: bp.id, fieldId: fp.id });
+function _showSwapPreview(isAlert) {
+  const pairs = _calculateProposedSwaps();
+  if (pairs.length === 0) {
+    _showToast('No bench players to rotate');
+    return;
   }
 
-  _gs.lastSwap = { type: 'swap_all', count: swapCount * 2, pairs };
-  _gs.swapAllVisible = false;
+  _gs.proposedPairs = pairs;
 
-  const banner = _gs.container.querySelector('#swap-banner');
-  if (banner) banner.style.display = 'none';
+  const pairsEl = _gs.container.querySelector('#preview-pairs');
+  let html = '';
+  for (const p of pairs) {
+    const outTime = _fmt(p.out.totalOnTime + p.out.currentStint);
+    const inWait = _fmt(_getBenchWait(p.in));
+    html += `
+      <div class="preview-pair">
+        <div class="preview-out">
+          <span class="preview-label">OUT</span>
+          <span class="preview-name">${_esc(p.out.name)}</span>
+          <span class="preview-time">${outTime} played</span>
+        </div>
+        <div class="preview-in">
+          <span class="preview-label">IN</span>
+          <span class="preview-name">${_esc(p.in.name)}</span>
+          <span class="preview-time">${inWait} waiting</span>
+        </div>
+      </div>
+    `;
+  }
+  pairsEl.innerHTML = html;
 
+  const overlay = _gs.container.querySelector('#swap-preview');
+  if (overlay) overlay.style.display = '';
+
+  if (isAlert) {
+    try { navigator.vibrate([200, 100, 200]); } catch (e) { /* ignore */ }
+    _playAlertTone();
+  }
+}
+
+function _hideSwapPreview() {
+  _gs.proposedPairs = null;
+  const overlay = _gs.container.querySelector('#swap-preview');
+  if (overlay) overlay.style.display = 'none';
+}
+
+async function _handleConfirmRotation() {
+  const pairs = _gs.proposedPairs;
+  if (!pairs || pairs.length === 0) return;
+
+  const ts = _gs.timerSeconds;
+  const swapPairs = [];
+
+  for (const pair of pairs) {
+    await db_insertEvent({ gameId: _gs.game.id, playerId: pair.out.id, eventType: 'sub_off', timestamp: ts });
+    await db_insertEvent({ gameId: _gs.game.id, playerId: pair.in.id, eventType: 'sub_on', timestamp: ts });
+
+    pair.out.totalOnTime += Math.max(0, ts - (pair.out.fieldEnteredAt || 0));
+    pair.out.onField = false;
+    pair.out.fieldEnteredAt = null;
+    pair.out.currentStint = 0;
+    pair.out.benchSince = ts;
+
+    pair.in.totalBenchTime += Math.max(0, ts - pair.in.benchSince);
+    pair.in.onField = true;
+    pair.in.fieldEnteredAt = ts;
+    pair.in.currentStint = 0;
+
+    swapPairs.push({ benchId: pair.in.id, fieldId: pair.out.id });
+  }
+
+  _gs.lastSwap = { type: 'swap_all', count: pairs.length * 2, pairs: swapPairs };
+
+  _hideSwapPreview();
   _renderFieldZone();
   _renderBenchZone();
   _saveCrashRecovery();
 
-  _showUndoToast('Rotated ' + swapCount + ' players', _handleUndo);
+  _showUndoToast('Rotated ' + pairs.length + ' players', _handleUndo);
 }
 
 async function _handleUndo() {
