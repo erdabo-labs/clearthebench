@@ -908,60 +908,197 @@ html, body {
   outline-offset: -2px;
 }
 
-/* ── SWAP ALL BANNER ────────────────────────────────────────── */
+/* ── ROTATE BUTTON ─────────────────────────────────────────── */
 
-.swap-all-banner {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  padding: 20px 16px;
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
-  background: var(--orange);
-  text-align: center;
-  animation: banner-pulse 1.5s ease-in-out infinite;
-}
-
-.swap-all-banner .banner-text {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 22px;
-  letter-spacing: 2px;
-  color: #1a0e00;
-  margin-bottom: 12px;
-}
-
-.swap-all-banner .btn-swap-all {
-  display: inline-flex;
+.btn-rotate {
+  display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   min-height: 44px;
-  padding: 12px 32px;
+  padding: 12px 24px;
   font-family: 'DM Sans', sans-serif;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
-  color: var(--orange);
-  background: #1a0e00;
+  letter-spacing: 0.5px;
+  color: #1a0e00;
+  background: var(--orange);
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
-  transition: transform 0.1s;
+  transition: background 0.15s, transform 0.1s;
+  user-select: none;
+  margin-bottom: 12px;
 }
 
-.swap-all-banner .btn-swap-all:active {
-  transform: scale(0.95);
+.btn-rotate:active {
+  transform: scale(0.97);
+  background: #ffb36e;
 }
 
-.swap-all-banner .btn-dismiss {
-  display: block;
-  margin: 10px auto 0;
-  padding: 8px 16px;
-  font-size: 13px;
+/* ── SWAP PREVIEW OVERLAY ──────────────────────────────────── */
+
+.swap-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: modal-fade-in 0.2s ease-out;
+}
+
+.swap-preview-sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 24px 20px;
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  background: var(--bg-elevated);
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-top: 2px solid var(--orange);
+  animation: modal-slide-up 0.25s ease-out;
+}
+
+.preview-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  letter-spacing: 2px;
+  color: var(--orange);
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.preview-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.preview-pair {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preview-out,
+.preview-in {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-label {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  width: 32px;
+  text-align: center;
+}
+
+.preview-out .preview-label {
+  background: rgba(255, 107, 107, 0.2);
+  color: var(--red);
+}
+
+.preview-in .preview-label {
+  background: rgba(168, 224, 99, 0.2);
+  color: var(--lime);
+}
+
+.preview-name {
+  flex: 1;
+  font-size: 14px;
   font-weight: 600;
-  color: rgba(26, 14, 0, 0.6);
-  background: none;
-  border: none;
+  color: var(--text);
+}
+
+.preview-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── LINEUP PICKER ─────────────────────────────────────────── */
+
+.lineup-info {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.lineup-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lime);
+  text-align: center;
+  padding: 8px;
+  margin-bottom: 12px;
+}
+
+.lineup-count.over {
+  color: var(--red);
+}
+
+.lineup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.lineup-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.lineup-row:active {
+  background: var(--card2);
+}
+
+.lineup-row.field {
+  border-color: var(--lime-dim);
+  background: rgba(168, 224, 99, 0.06);
+}
+
+.lineup-badge {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.lineup-row.field .lineup-badge {
+  background: rgba(168, 224, 99, 0.2);
+  color: var(--lime);
+}
+
+.lineup-row.bench .lineup-badge {
+  background: rgba(138, 170, 122, 0.15);
+  color: var(--text-muted);
 }
 
 /* ── TOAST ──────────────────────────────────────────────────── */
