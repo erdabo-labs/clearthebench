@@ -54,24 +54,31 @@ function _ensureAudioContext() {
 function _playAlertTone() {
   try {
     const ctx = _ensureAudioContext();
-    // Three ascending beeps — hard to miss
-    const notes = [660, 880, 1100];
-    const beepLen = 0.15;
-    const gap = 0.1;
-    // Play the pattern twice for emphasis
-    for (let r = 0; r < 2; r++) {
-      const offset = r * (notes.length * (beepLen + gap) + 0.15);
-      notes.forEach((freq, i) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = freq;
-        gain.gain.value = 0.7;
-        const start = ctx.currentTime + offset + i * (beepLen + gap);
-        osc.start(start);
-        osc.stop(start + beepLen);
-      });
+    const doPlay = () => {
+      // Three ascending beeps, played twice
+      const notes = [660, 880, 1100];
+      const beepLen = 0.15;
+      const gap = 0.1;
+      for (let r = 0; r < 2; r++) {
+        const offset = r * (notes.length * (beepLen + gap) + 0.15);
+        notes.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = freq;
+          gain.gain.value = 0.7;
+          const start = ctx.currentTime + offset + i * (beepLen + gap);
+          osc.start(start);
+          osc.stop(start + beepLen);
+        });
+      }
+    };
+    // If context is suspended, wait for resume before scheduling
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(doPlay).catch(() => {});
+    } else {
+      doPlay();
     }
   } catch (e) { /* ignore */ }
 }
@@ -396,6 +403,7 @@ router_register('game', async (container, params) => {
     wakeLock: null,
     lastAlertAt: 0,
     earlyAlertFired: false,
+    fullAlertFired: false,
   };
 
   // Initialize all players as bench with zeroed stats
@@ -856,30 +864,16 @@ function _updatePreviewTimes() {
     }
   }
 
-  // Update pair times
+  // Update all player times in preview
   const pairsEl = _gs.container.querySelector('#preview-pairs');
   if (!pairsEl) return;
 
-  pairsEl.querySelectorAll('.preview-pair').forEach(el => {
-    const idx = parseInt(el.dataset.pairIdx);
-    const pair = _gs.proposedSwaps.pairs[idx];
-    if (!pair) return;
-    const outTimeEl = el.querySelector('.preview-out .preview-time');
-    if (outTimeEl) outTimeEl.textContent = _fmt(_getPlayedTime(pair.out)) + ' played';
-    const inTimeEl = el.querySelector('.preview-in .preview-time');
-    if (inTimeEl) inTimeEl.textContent = _fmt(_getBenchWait(pair.in)) + ' waiting';
-  });
-
-  // Update staying player times
-  pairsEl.querySelectorAll('.preview-staying').forEach(el => {
-    const ps = _gs.players[el.dataset.stayingId];
+  pairsEl.querySelectorAll('.preview-player-row').forEach(el => {
+    const pid = el.dataset.playerId || el.dataset.stayingId;
+    const ps = pid ? _gs.players[pid] : null;
     if (!ps) return;
     const timeEl = el.querySelector('.preview-time');
-    if (timeEl) {
-      timeEl.textContent = ps.onField
-        ? _fmt(_getPlayedTime(ps)) + ' played'
-        : _fmt(_getBenchWait(ps)) + ' waiting';
-    }
+    if (timeEl) timeEl.textContent = _fmt(_getPlayedTime(ps)) + ' played';
   });
 }
 
@@ -899,16 +893,16 @@ function _checkRotationAlert() {
     _showSwapPreview(true);
   }
 
-  // Full alert: at or past the interval
-  if (_gs.timerSeconds >= nextAlertAt) {
-    _gs.lastAlertAt = Math.floor(_gs.timerSeconds / _gs.alertInterval) * _gs.alertInterval;
-    _gs.earlyAlertFired = false;
-    // If preview isn't already showing, show it now
+  // Full alert: at or past the interval — fire once, don't auto-advance lastAlertAt.
+  // lastAlertAt only resets when the coach actually performs a rotation.
+  // This keeps the OVERDUE counter ticking until the sub happens.
+  if (!_gs.fullAlertFired && _gs.timerSeconds >= nextAlertAt) {
+    _gs.fullAlertFired = true;
     const overlay = _gs.container.querySelector('#swap-preview');
     if (overlay && overlay.style.display === 'none') {
       _showSwapPreview(true);
     } else {
-      // Preview already open — just play alert again
+      // Preview already open from early warning — just re-alert
       _playAlertTone();
       try { navigator.vibrate([200, 100, 200, 100, 200]); } catch (e) { /* ignore */ }
     }
@@ -962,6 +956,8 @@ async function _handleFieldPlayerTap(fieldPlayerId) {
 
   // Reset countdown so next rotation gets full interval
   _gs.lastAlertAt = ts;
+  _gs.earlyAlertFired = false;
+  _gs.fullAlertFired = false;
 
   _renderFieldZone();
   _renderBenchZone();
@@ -972,51 +968,28 @@ async function _handleFieldPlayerTap(fieldPlayerId) {
 }
 
 function _calculateProposedSwaps() {
+  // Equity-based ordering:
+  // Field sorted most-played first → they come out first
+  // Bench sorted least-played first → they go in first (need the most time)
   const field = Object.values(_gs.players)
     .filter(p => p.onField)
     .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
 
   const bench = Object.values(_gs.players)
     .filter(p => !p.onField)
-    .sort((a, b) => _getPlayedTime(a) - _getPlayedTime(b));  // least played first
+    .sort((a, b) => _getPlayedTime(a) - _getPlayedTime(b));
 
-  // Goal: equalize total play time.
-  // Field players with the MOST time should come out.
-  // Bench players with the LEAST time should go in.
-  // But skip bench players who already have more play time than
-  // the field player they'd replace — that swap makes things less equal.
-
+  // Always swap min(bench, field) — everyone on bench should get a turn.
+  // The equity is in the ORDER, not in whether to swap.
   const swapCount = Math.min(bench.length, field.length);
-
-  // Build candidate pairs: most-played field out, least-played bench in
   const pairs = [];
-  const usedField = new Set();
-  const usedBench = new Set();
-
-  for (let b = 0; b < bench.length && pairs.length < swapCount; b++) {
-    const benchPs = bench[b];
-    const benchPlayed = _getPlayedTime(benchPs);
-
-    // Find the field player with the most time who hasn't been paired yet
-    for (let f = 0; f < field.length; f++) {
-      if (usedField.has(f)) continue;
-      const fieldPs = field[f];
-      const fieldPlayed = _getPlayedTime(fieldPs);
-
-      // Only swap if the bench player has less play time than the field player.
-      // Otherwise this swap would make inequality worse.
-      if (benchPlayed < fieldPlayed) {
-        pairs.push({ out: fieldPs, in: benchPs });
-        usedField.add(f);
-        usedBench.add(b);
-        break;
-      }
-    }
+  for (let i = 0; i < swapCount; i++) {
+    pairs.push({ out: field[i], in: bench[i] });
   }
 
-  // Unmatched extras on whichever side has more, plus any skipped players
-  const stayingField = field.filter((_, i) => !usedField.has(i));
-  const stayingBench = bench.filter((_, i) => !usedBench.has(i));
+  // Unmatched extras on whichever side has more
+  const stayingField = field.slice(swapCount);
+  const stayingBench = bench.slice(swapCount);
 
   return { pairs, stayingField, stayingBench };
 }
@@ -1033,47 +1006,52 @@ function _showSwapPreview(isAlert) {
 
   const pairsEl = _gs.container.querySelector('#preview-pairs');
   let html = '';
+
+  // ── COMING OUT section ──
+  html += '<div class="preview-section-title out-title">COMING OUT</div>';
   for (let i = 0; i < result.pairs.length; i++) {
     const p = result.pairs[i];
-    const outTime = _fmt(_getPlayedTime(p.out));
-    const inWait = _fmt(_getBenchWait(p.in));
     html += `
-      <div class="preview-pair" data-pair-idx="${i}">
-        <div class="preview-out">
-          <span class="preview-label">OUT</span>
-          <span class="preview-name">${_esc(p.out.name)}</span>
-          <span class="preview-time">${outTime} played</span>
-        </div>
-        <div class="preview-in">
-          <span class="preview-label">IN</span>
-          <span class="preview-name">${_esc(p.in.name)}</span>
-          <span class="preview-time">${inWait} waiting</span>
-        </div>
+      <div class="preview-player-row out" data-swap-idx="${i}" data-side="out" data-player-id="${p.out.id}">
+        <span class="preview-name">${_esc(p.out.name)}</span>
+        <span class="preview-time">${_fmt(_getPlayedTime(p.out))} played</span>
       </div>
     `;
   }
 
-  // Show staying players if sides are uneven
+  // Staying on field (if field has more than bench)
   if (result.stayingField.length > 0) {
     html += '<div class="preview-staying-title">STAYING ON FIELD</div>';
-    html += '<div class="preview-staying-hint">Tap a staying player, then tap a swapping player above to trade spots</div>';
     for (const ps of result.stayingField) {
       html += `
-        <div class="preview-staying field" data-staying-id="${ps.id}">
-          <span class="preview-staying-name">${_esc(ps.name)}</span>
+        <div class="preview-player-row staying" data-staying-id="${ps.id}" data-staying-side="field">
+          <span class="preview-name">${_esc(ps.name)}</span>
           <span class="preview-time">${_fmt(_getPlayedTime(ps))} played</span>
         </div>
       `;
     }
   }
+
+  // ── COMING IN section ──
+  html += '<div class="preview-section-title in-title">COMING IN</div>';
+  for (let i = 0; i < result.pairs.length; i++) {
+    const p = result.pairs[i];
+    html += `
+      <div class="preview-player-row in" data-swap-idx="${i}" data-side="in" data-player-id="${p.in.id}">
+        <span class="preview-name">${_esc(p.in.name)}</span>
+        <span class="preview-time">${_fmt(_getPlayedTime(p.in))} played</span>
+      </div>
+    `;
+  }
+
+  // Staying on bench (if bench has more than field)
   if (result.stayingBench.length > 0) {
     html += '<div class="preview-staying-title">STAYING ON BENCH</div>';
-    html += '<div class="preview-staying-hint">Tap a staying player, then tap a swapping player above to trade spots</div>';
     for (const ps of result.stayingBench) {
       html += `
-        <div class="preview-staying bench" data-staying-id="${ps.id}">
-          <span class="preview-staying-name">${_esc(ps.name)}</span>
-          <span class="preview-time">${_fmt(_getBenchWait(ps))} waiting</span>
+        <div class="preview-player-row staying" data-staying-id="${ps.id}" data-staying-side="bench">
+          <span class="preview-name">${_esc(ps.name)}</span>
+          <span class="preview-time">${_fmt(_getPlayedTime(ps))} played</span>
         </div>
       `;
     }
@@ -1081,12 +1059,14 @@ function _showSwapPreview(isAlert) {
 
   pairsEl.innerHTML = html;
 
-  // Bind staying player tap → then pair tap to trade
+  // ── Staying ↔ swapping trade interaction ──
+  // Tap a staying player to select, then tap a swapping player on the same
+  // side (out=field, in=bench) to trade who participates in the rotation.
   _gs.pendingStaying = null;
-  pairsEl.querySelectorAll('.preview-staying').forEach(el => {
+
+  pairsEl.querySelectorAll('.preview-player-row.staying').forEach(el => {
     el.addEventListener('click', () => {
-      // Toggle selection
-      pairsEl.querySelectorAll('.preview-staying').forEach(s => s.classList.remove('selected'));
+      pairsEl.querySelectorAll('.preview-player-row').forEach(s => s.classList.remove('selected'));
       if (_gs.pendingStaying === el.dataset.stayingId) {
         _gs.pendingStaying = null;
       } else {
@@ -1096,33 +1076,35 @@ function _showSwapPreview(isAlert) {
     });
   });
 
-  pairsEl.querySelectorAll('.preview-pair').forEach(el => {
+  pairsEl.querySelectorAll('.preview-player-row.out, .preview-player-row.in').forEach(el => {
     el.addEventListener('click', () => {
       if (!_gs.pendingStaying) return;
-      const idx = parseInt(el.dataset.pairIdx);
-      const pair = _gs.proposedSwaps.pairs[idx];
       const stayingPs = _gs.players[_gs.pendingStaying];
-      if (!stayingPs || !pair) return;
+      if (!stayingPs) return;
+      const idx = parseInt(el.dataset.swapIdx);
+      const pair = _gs.proposedSwaps.pairs[idx];
+      if (!pair) return;
 
-      // Determine if the staying player is field or bench
-      if (stayingPs.onField) {
-        // Swap the "out" player: staying field player takes the spot of the paired field player
-        // The paired field player becomes "staying" instead
-        const oldOut = pair.out;
-        _gs.proposedSwaps.stayingField = _gs.proposedSwaps.stayingField.filter(p => p.id !== stayingPs.id);
-        _gs.proposedSwaps.stayingField.push(oldOut);
-        pair.out = stayingPs;
-      } else {
-        // Swap the "in" player: staying bench player takes the spot of the paired bench player
-        const oldIn = pair.in;
-        _gs.proposedSwaps.stayingBench = _gs.proposedSwaps.stayingBench.filter(p => p.id !== stayingPs.id);
-        _gs.proposedSwaps.stayingBench.push(oldIn);
-        pair.in = stayingPs;
+      const stayingSide = stayingPs.onField ? 'field' : 'bench';
+      const clickedSide = el.dataset.side; // "out" or "in"
+
+      // Only allow trade within the same side: field-staying ↔ out, bench-staying ↔ in
+      if ((stayingSide === 'field' && clickedSide === 'out') ||
+          (stayingSide === 'bench' && clickedSide === 'in')) {
+        if (stayingSide === 'field') {
+          const oldOut = pair.out;
+          _gs.proposedSwaps.stayingField = _gs.proposedSwaps.stayingField.filter(p => p.id !== stayingPs.id);
+          _gs.proposedSwaps.stayingField.push(oldOut);
+          pair.out = stayingPs;
+        } else {
+          const oldIn = pair.in;
+          _gs.proposedSwaps.stayingBench = _gs.proposedSwaps.stayingBench.filter(p => p.id !== stayingPs.id);
+          _gs.proposedSwaps.stayingBench.push(oldIn);
+          pair.in = stayingPs;
+        }
+        _gs.pendingStaying = null;
+        _showSwapPreview(false);
       }
-
-      _gs.pendingStaying = null;
-      // Re-render the preview with updated swaps
-      _showSwapPreview(false);
     });
   });
 
@@ -1144,7 +1126,7 @@ function _showSwapPreview(isAlert) {
 function _hideSwapPreview() {
   _gs.proposedSwaps = null;
   _gs.pendingStaying = null;
-  _gs.earlyAlertFired = false;
+  // Don't reset alert flags on cancel — they'll re-trigger if still overdue
   const overlay = _gs.container.querySelector('#swap-preview');
   if (overlay) overlay.style.display = 'none';
 }
@@ -1182,6 +1164,8 @@ async function _handleConfirmRotation() {
 
   // Reset countdown so next rotation gets full interval from now
   _gs.lastAlertAt = ts;
+  _gs.earlyAlertFired = false;
+  _gs.fullAlertFired = false;
 
   _renderFieldZone();
   _renderBenchZone();
