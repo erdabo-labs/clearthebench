@@ -365,6 +365,8 @@ router_register('game', async (container, params) => {
     if (_gs.visibilityHandler) {
       document.removeEventListener('visibilitychange', _gs.visibilityHandler);
     }
+    if (_gs.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+    if (_gs.queueChannel) db_unsubscribe(_gs.queueChannel);
     _releaseWakeLock();
     _gs = null;
   }
@@ -418,6 +420,9 @@ router_register('game', async (container, params) => {
     fullAlertFired: false,
     offPlays: 0,
     defPlays: 0,
+    queueIn: [],
+    queueOut: [],
+    queueChannel: null,
   };
 
   // Initialize all players as bench with zeroed stats
@@ -932,17 +937,35 @@ function _checkRotationAlert() {
 }
 
 function _handleBenchPlayerTap(playerId) {
+  if (_isFootball()) {
+    // Football: toggle player in the "going in" rotation queue
+    const idx = _gs.queueIn.indexOf(playerId);
+    if (idx >= 0) _gs.queueIn.splice(idx, 1);
+    else _gs.queueIn.push(playerId);
+    _renderFootballBenchZone();
+    _renderFootballRotationQueue();
+    _broadcastQueue();
+    return;
+  }
   if (_gs.pendingBenchPlayer === playerId) {
-    // Deselect
     _gs.pendingBenchPlayer = null;
   } else {
     _gs.pendingBenchPlayer = playerId;
   }
-  if (_isFootball()) _renderFootballBenchZone();
-  else _renderBenchZone();
+  _renderBenchZone();
 }
 
 async function _handleFieldPlayerTap(fieldPlayerId) {
+  if (_isFootball()) {
+    // Football: toggle player in the "going out" rotation queue
+    const idx = _gs.queueOut.indexOf(fieldPlayerId);
+    if (idx >= 0) _gs.queueOut.splice(idx, 1);
+    else _gs.queueOut.push(fieldPlayerId);
+    _renderFootballFieldZone();
+    _renderFootballRotationQueue();
+    _broadcastQueue();
+    return;
+  }
   if (!_gs.pendingBenchPlayer) return;
 
   const benchId = _gs.pendingBenchPlayer;
@@ -1250,6 +1273,8 @@ async function _handleEndGame() {
     timestamp: _gs.timerSeconds,
   });
 
+  if (_gs.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+  if (_gs.queueChannel) db_unsubscribe(_gs.queueChannel);
   _releaseWakeLock();
   _removeCrashRecovery();
 
@@ -1286,8 +1311,9 @@ function _renderFootballGameScreen() {
           </button>
         </div>
         <div class="play-tracker-hint" id="play-tracker-hint">
-          Tap a bench player, then a field player to swap.
+          Tap bench &amp; field players to queue a rotation. Logs &amp; swaps on next play.
         </div>
+        <div class="rotation-queue" id="rotation-queue"></div>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
         <div class="team-stats" id="team-stats"></div>
@@ -1297,8 +1323,89 @@ function _renderFootballGameScreen() {
 
   _renderFootballFieldZone();
   _renderFootballBenchZone();
+  _renderFootballRotationQueue();
   _renderFootballTeamStats();
   _bindFootballGameControls();
+  _setupQueueChannel();
+}
+
+function _setupQueueChannel() {
+  // Coach side broadcasts queue state to spectator(s)
+  if (_gs.queueChannel) return;
+  if (_gs.watchMode) return;
+  if (!_gs?.game?.id) return;
+  try {
+    _gs.queueChannel = _db.channel('ctb_queue_' + _gs.game.id, {
+      config: { broadcast: { self: false } },
+    });
+    _gs.queueChannel.subscribe();
+  } catch (e) { /* ignore — broadcast just won't work */ }
+}
+
+function _broadcastQueue() {
+  if (!_gs?.queueChannel) return;
+  try {
+    _gs.queueChannel.send({
+      type: 'broadcast',
+      event: 'queue',
+      payload: { in: _gs.queueIn.slice(), out: _gs.queueOut.slice() },
+    });
+  } catch (e) { /* ignore */ }
+}
+
+function _renderFootballRotationQueue() {
+  const zone = _gs.container?.querySelector('#rotation-queue');
+  if (!zone) return;
+
+  const inIds = _gs.queueIn || [];
+  const outIds = _gs.queueOut || [];
+
+  if (inIds.length === 0 && outIds.length === 0) {
+    zone.innerHTML = '';
+    zone.classList.remove('visible');
+    return;
+  }
+
+  const itemHTML = (id, side) => {
+    const ps = _gs.players[id];
+    if (!ps) return '';
+    return '<div class="queue-item ' + side + '">' + _esc(ps.name) + '</div>';
+  };
+
+  const inHTML = inIds.map(id => itemHTML(id, 'in')).join('') || '<div class="queue-empty">— tap bench —</div>';
+  const outHTML = outIds.map(id => itemHTML(id, 'out')).join('') || '<div class="queue-empty">— tap field —</div>';
+
+  const clearBtn = _gs.watchMode ? '' :
+    '<button class="queue-clear" id="btn-clear-queue" title="Clear queue">CLEAR</button>';
+
+  zone.innerHTML = `
+    <div class="queue-header">
+      <span class="queue-title">NEXT ROTATION</span>
+      ${clearBtn}
+    </div>
+    <div class="queue-cols">
+      <div class="queue-col queue-col-in">
+        <div class="queue-col-label">GOING IN</div>
+        <div class="queue-col-list">${inHTML}</div>
+      </div>
+      <div class="queue-col queue-col-out">
+        <div class="queue-col-label">GOING OUT</div>
+        <div class="queue-col-list">${outHTML}</div>
+      </div>
+    </div>
+  `;
+  zone.classList.add('visible');
+
+  if (!_gs.watchMode) {
+    zone.querySelector('#btn-clear-queue')?.addEventListener('click', () => {
+      _gs.queueIn = [];
+      _gs.queueOut = [];
+      _renderFootballFieldZone();
+      _renderFootballBenchZone();
+      _renderFootballRotationQueue();
+      _broadcastQueue();
+    });
+  }
 }
 
 function _renderFootballFieldZone() {
@@ -1318,9 +1425,16 @@ function _renderFootballFieldZone() {
     const played = _getPlayedTime(ps);
     const sat = _getBenchWait(ps);
     const isSuggestedOut = played > 0 && played === maxPlayed && fieldPlayers.length > 1;
+    const isQueued = (_gs.queueOut || []).includes(ps.id);
+    let cls = 'ff-cell field';
+    if (isQueued) cls += ' queued-out';
+    else if (isSuggestedOut) cls += ' suggest-out';
+    let hint = '';
+    if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
+    else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
     html += `
-      <div class="ff-cell field${isSuggestedOut ? ' suggest-out' : ''}" data-player-id="${ps.id}">
-        ${isSuggestedOut ? '<span class="ff-hint">next out</span>' : ''}
+      <div class="${cls}" data-player-id="${ps.id}">
+        ${hint}
         <div class="ff-name">${_esc(ps.name)}</div>
         <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
       </div>
@@ -1353,15 +1467,17 @@ function _renderFootballBenchZone() {
     const ps = benchPlayers[i];
     const sat = _getBenchWait(ps);
     const played = _getPlayedTime(ps);
-    const isSelected = _gs.pendingBenchPlayer === ps.id;
-    // First in sorted-by-most-sat list = suggested next in (only if there's more than one bench player)
+    const isQueued = (_gs.queueIn || []).includes(ps.id);
     const isSuggestedIn = i === 0 && benchPlayers.length > 1 && sat > 0;
     let cls = 'ff-cell bench';
-    if (isSelected) cls += ' selected';
-    if (isSuggestedIn) cls += ' suggest-in';
+    if (isQueued) cls += ' queued-in';
+    else if (isSuggestedIn) cls += ' suggest-in';
+    let hint = '';
+    if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
+    else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
-        ${isSuggestedIn ? '<span class="ff-hint">next in</span>' : ''}
+        ${hint}
         <div class="ff-name">${_esc(ps.name)}</div>
         <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
       </div>
@@ -1484,6 +1600,9 @@ router_register('watch', async (container, { gameId } = {}) => {
     defPlays: 0,
     watchMode: true,
     realtimeChannel: null,
+    queueChannel: null,
+    queueIn: [],
+    queueOut: [],
   };
 
   for (const p of roster) {
@@ -1500,11 +1619,31 @@ router_register('watch', async (container, { gameId } = {}) => {
   _gs.realtimeChannel = db_subscribeToGame(gameId, (newEvent) => {
     if (!_gs || !_gs.watchMode) return;
     _applyEventForWatch(newEvent);
+    // A play_logged event clears any queue that was in flight
+    if (newEvent.event_type === 'play_logged') {
+      _gs.queueIn = [];
+      _gs.queueOut = [];
+    }
     _renderWatchScreen();
   });
 
+  // Listen for live rotation-queue broadcasts from the head coach
+  try {
+    _gs.queueChannel = _db.channel('ctb_queue_' + gameId)
+      .on('broadcast', { event: 'queue' }, ({ payload }) => {
+        if (!_gs || !_gs.watchMode) return;
+        _gs.queueIn = Array.isArray(payload?.in) ? payload.in : [];
+        _gs.queueOut = Array.isArray(payload?.out) ? payload.out : [];
+        _renderFootballRotationQueue();
+        _renderFootballFieldZone();
+        _renderFootballBenchZone();
+      })
+      .subscribe();
+  } catch (e) { /* ignore — broadcast just won't update */ }
+
   window.addEventListener('beforeunload', () => {
     if (_gs?.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+    if (_gs?.queueChannel) db_unsubscribe(_gs.queueChannel);
   });
 });
 
@@ -1571,6 +1710,7 @@ function _renderWatchScreen() {
             <span class="play-btn-count"><span id="def-play-count">${_gs.defPlays || 0}</span> plays</span>
           </div>
         </div>
+        <div class="rotation-queue" id="rotation-queue"></div>
         ` : ''}
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
@@ -1581,6 +1721,7 @@ function _renderWatchScreen() {
   if (isFootball) {
     _renderFootballFieldZone();
     _renderFootballBenchZone();
+    _renderFootballRotationQueue();
   } else {
     _renderFieldZone();
     _renderBenchZone();
@@ -1592,7 +1733,7 @@ async function _logPlay(side) {
   _ensureAudioContext();
 
   // Each play increments the play count (using timerSeconds as the counter)
-  // and credits all on-field players for that play.
+  // and credits all on-field players currently on the field for that play.
   _gs.timerSeconds++;
   if (side === 'offense') _gs.offPlays++;
   else if (side === 'defense') _gs.defPlays++;
@@ -1611,6 +1752,38 @@ async function _logPlay(side) {
     meta: { side },
   });
 
+  // Execute any queued rotation — pairs swap, extras stay
+  const ts = _gs.timerSeconds;
+  const pairCount = Math.min(_gs.queueIn.length, _gs.queueOut.length);
+  for (let i = 0; i < pairCount; i++) {
+    const inId = _gs.queueIn[i];
+    const outId = _gs.queueOut[i];
+    const inPs = _gs.players[inId];
+    const outPs = _gs.players[outId];
+    if (!inPs || !outPs) continue;
+
+    await db_insertEvent({ gameId: _gs.game.id, playerId: outId, eventType: 'sub_off', timestamp: ts });
+    await db_insertEvent({ gameId: _gs.game.id, playerId: inId, eventType: 'sub_on', timestamp: ts });
+
+    outPs.totalOnTime += Math.max(0, ts - (outPs.fieldEnteredAt || 0));
+    outPs.onField = false;
+    outPs.fieldEnteredAt = null;
+    outPs.currentStint = 0;
+    outPs.benchSince = ts;
+
+    inPs.totalBenchTime += Math.max(0, ts - inPs.benchSince);
+    inPs.onField = true;
+    inPs.fieldEnteredAt = ts;
+    inPs.currentStint = 0;
+  }
+
+  // Always clear queue on play (whether or not it executed)
+  if (_gs.queueIn.length || _gs.queueOut.length) {
+    _gs.queueIn = [];
+    _gs.queueOut = [];
+    _broadcastQueue();
+  }
+
   // Update header counters
   const offEl = _gs.container.querySelector('#off-play-count');
   const defEl = _gs.container.querySelector('#def-play-count');
@@ -1622,6 +1795,7 @@ async function _logPlay(side) {
 
   _renderFootballFieldZone();
   _renderFootballBenchZone();
+  _renderFootballRotationQueue();
   _renderFootballTeamStats();
   _saveCrashRecovery();
 }

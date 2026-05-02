@@ -1843,3 +1843,142 @@ html, body {
 .play-tracker.watch {
   margin-bottom: 12px;
 }
+
+/* ── ROTATION QUEUE (football) ─────────────────────────────── */
+
+.rotation-queue {
+  display: none;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.rotation-queue.visible {
+  display: block;
+}
+
+.queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.queue-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+.queue-clear {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.queue-clear:active {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.queue-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.queue-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
+.queue-col-in {
+  background: color-mix(in srgb, var(--lime) 8%, transparent);
+  border-color: color-mix(in srgb, var(--lime) 40%, var(--border));
+}
+
+.queue-col-out {
+  background: color-mix(in srgb, var(--orange) 8%, transparent);
+  border-color: color-mix(in srgb, var(--orange) 40%, var(--border));
+}
+
+.queue-col-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+
+.queue-col-in .queue-col-label { color: var(--lime); }
+.queue-col-out .queue-col-label { color: var(--orange); }
+
+.queue-col-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.queue-item {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 4px;
+  word-break: break-word;
+}
+
+.queue-item.in {
+  background: color-mix(in srgb, var(--lime) 22%, transparent);
+}
+
+.queue-item.out {
+  background: color-mix(in srgb, var(--orange) 22%, transparent);
+}
+
+.queue-empty {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 4px;
+  font-style: italic;
+}
+
+/* ── QUEUED CELL HIGHLIGHTS (football) ─────────────────────── */
+
+.ff-cell.queued-in {
+  border-color: var(--lime);
+  background: color-mix(in srgb, var(--lime) 22%, var(--card));
+}
+
+.ff-cell.queued-out {
+  border-color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 22%, var(--card));
+}
+
+.ff-cell.queued-in .ff-hint.hint-in {
+  background: var(--lime);
+  color: #0e1f0a;
+}
+
+.ff-cell.queued-out .ff-hint.hint-out {
+  background: var(--orange);
+  color: #1a0e00;
+}
