@@ -43,6 +43,18 @@ async function auth_handleMagicLinkCallback() {
   return coach;
 }
 
+async function auth_verifyEmailOtp(email, token) {
+  const { error } = await _db.auth.verifyOtp({
+    email,
+    token: String(token).trim(),
+    type: 'email',
+  });
+  if (error) return { ok: false, message: error.message };
+  const coach = await db_getOrCreateCoach(email);
+  if (coach) auth_saveSession(coach);
+  return { ok: true, coach };
+}
+
 async function auth_signOut() {
   await _db.auth.signOut();
   auth_clearSession();

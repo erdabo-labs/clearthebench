@@ -251,13 +251,23 @@ router_register('signin', (container) => {
         </div>
         <div class="signin-body">
           <div class="section-title">SIGN IN</div>
-          <div class="signin-sub">We'll send a magic link to your email. No password needed.</div>
+          <div class="signin-sub">We'll email you a 6-digit sign-in code. (A magic link is included too — handy on a regular browser; the code is the way to go from a home-screen app.)</div>
           <div class="input-group">
             <label class="input-label" for="email-input">Email</label>
             <input class="input-field" id="email-input" type="email"
               placeholder="coach@example.com" autocomplete="email" />
           </div>
-          <button class="btn-primary" id="btn-send-link">Send Magic Link</button>
+          <button class="btn-primary" id="btn-send-link">Send Sign-In Code</button>
+          <div id="otp-section" style="display:none;margin-top:24px">
+            <div class="input-group">
+              <label class="input-label" for="otp-input">6-digit Code</label>
+              <input class="input-field" id="otp-input" type="text" inputmode="numeric"
+                pattern="[0-9]*" maxlength="6" autocomplete="one-time-code"
+                placeholder="123456" />
+            </div>
+            <button class="btn-primary" id="btn-verify-otp">Sign In with Code</button>
+            <button class="btn-ghost" id="btn-resend" style="margin-top:8px">Resend Code</button>
+          </div>
           <div id="signin-msg" class="form-msg"></div>
         </div>
       </div>
@@ -270,33 +280,81 @@ router_register('signin', (container) => {
 
   const emailInput = container.querySelector('#email-input');
   const sendBtn = container.querySelector('#btn-send-link');
+  const otpSection = container.querySelector('#otp-section');
+  const otpInput = container.querySelector('#otp-input');
+  const verifyBtn = container.querySelector('#btn-verify-otp');
+  const resendBtn = container.querySelector('#btn-resend');
   const msgEl = container.querySelector('#signin-msg');
 
-  sendBtn?.addEventListener('click', async () => {
+  let sentEmail = null;
+
+  async function sendCode() {
     const email = emailInput.value.trim();
     if (!email || !email.includes('@')) {
       msgEl.textContent = 'Please enter a valid email.';
       msgEl.className = 'form-msg error';
       return;
     }
-
     sendBtn.disabled = true;
     sendBtn.textContent = 'Sending...';
+    if (resendBtn) { resendBtn.disabled = true; resendBtn.textContent = 'Sending...'; }
     const result = await auth_sendMagicLink(email);
     sendBtn.disabled = false;
-    sendBtn.textContent = 'Send Magic Link';
+    sendBtn.textContent = 'Send Sign-In Code';
+    if (resendBtn) { resendBtn.disabled = false; resendBtn.textContent = 'Resend Code'; }
 
     if (result.ok) {
-      msgEl.textContent = 'Check your email for the magic link!';
+      sentEmail = email;
+      otpSection.style.display = '';
+      sendBtn.style.display = 'none';
+      msgEl.textContent = 'Check your email — the code is in there.';
       msgEl.className = 'form-msg success';
+      otpInput.focus();
     } else {
       msgEl.textContent = result.message || 'Something went wrong.';
       msgEl.className = 'form-msg error';
     }
-  });
+  }
+
+  sendBtn?.addEventListener('click', sendCode);
+  resendBtn?.addEventListener('click', sendCode);
 
   emailInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') sendBtn?.click();
+  });
+
+  otpInput?.addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+  });
+
+  otpInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') verifyBtn?.click();
+  });
+
+  verifyBtn?.addEventListener('click', async () => {
+    const code = otpInput.value.trim();
+    if (code.length !== 6) {
+      msgEl.textContent = 'Enter the 6-digit code from your email.';
+      msgEl.className = 'form-msg error';
+      return;
+    }
+    if (!sentEmail) {
+      msgEl.textContent = 'Send the code first.';
+      msgEl.className = 'form-msg error';
+      return;
+    }
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = 'Signing in...';
+    const result = await auth_verifyEmailOtp(sentEmail, code);
+    verifyBtn.disabled = false;
+    verifyBtn.textContent = 'Sign In with Code';
+
+    if (result.ok && result.coach) {
+      router_navigate('home', { coach: result.coach });
+    } else {
+      msgEl.textContent = result.message || 'Code did not match. Try resending.';
+      msgEl.className = 'form-msg error';
+    }
   });
 });
 
