@@ -1775,3 +1775,71 @@ html, body {
   color: #0e1f0a;
   background: var(--lime);
 }
+
+/* ── HEADER ACTIONS (multi-button) ─────────────────────────── */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.08s;
+}
+
+.header-btn:active {
+  transform: scale(0.95);
+  background: var(--card);
+}
+
+/* ── SPECTATOR VIEW ────────────────────────────────────────── */
+
+.spectator-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+.spectator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lime);
+  animation: spectator-pulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spectator-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.play-btn.readonly {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.95;
+}
+
+.play-tracker.watch {
+  margin-bottom: 12px;
+}

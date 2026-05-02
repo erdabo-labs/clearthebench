@@ -1270,7 +1270,10 @@ function _renderFootballGameScreen() {
       <div class="screen-body">
         <div class="game-header">
           <div class="app-logo">Clear<span>The</span>Bench</div>
-          <div class="header-action" id="btn-end-game">END</div>
+          <div class="header-actions">
+            <button class="header-btn" id="btn-share-watch" title="Share spectator link">SHARE</button>
+            <div class="header-action" id="btn-end-game">END</div>
+          </div>
         </div>
         <div class="play-tracker">
           <button class="play-btn play-btn-offense" id="btn-log-offense">
@@ -1326,11 +1329,13 @@ function _renderFootballFieldZone() {
   html += '</div>';
   zone.innerHTML = html;
 
-  zone.querySelectorAll('.ff-cell').forEach(cell => {
-    cell.addEventListener('click', () => {
-      _handleFieldPlayerTap(cell.dataset.playerId);
+  if (!_gs.watchMode) {
+    zone.querySelectorAll('.ff-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        _handleFieldPlayerTap(cell.dataset.playerId);
+      });
     });
-  });
+  }
 }
 
 function _renderFootballBenchZone() {
@@ -1365,11 +1370,13 @@ function _renderFootballBenchZone() {
   html += '</div>';
   zone.innerHTML = html;
 
-  zone.querySelectorAll('.ff-cell').forEach(cell => {
-    cell.addEventListener('click', () => {
-      _handleBenchPlayerTap(cell.dataset.playerId);
+  if (!_gs.watchMode) {
+    zone.querySelectorAll('.ff-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        _handleBenchPlayerTap(cell.dataset.playerId);
+      });
     });
-  });
+  }
 }
 
 function _renderFootballTeamStats() {
@@ -1400,6 +1407,184 @@ function _bindFootballGameControls() {
   c.querySelector('#btn-end-game')?.addEventListener('click', _handleEndGame);
   c.querySelector('#btn-log-offense')?.addEventListener('click', () => _logPlay('offense'));
   c.querySelector('#btn-log-defense')?.addEventListener('click', () => _logPlay('defense'));
+  c.querySelector('#btn-share-watch')?.addEventListener('click', _shareWatchLink);
+}
+
+async function _shareWatchLink() {
+  if (!_gs?.game?.id) return;
+  const url = window.location.origin + '/?watch=' + encodeURIComponent(_gs.game.id);
+  const title = 'Watch live — ClearTheBench';
+  const text = 'Live game tracker' + (_gs.team?.name ? ' for ' + _gs.team.name : '');
+
+  if (navigator.share) {
+    try { await navigator.share({ title, text, url }); return; }
+    catch (e) { /* user cancelled — fall through to clipboard */ }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    _showToast('Watch link copied');
+  } catch (e) {
+    _showToast(url);
+  }
+}
+
+// ── SPECTATOR (read-only) ────────────────────────────────────
+
+router_register('watch', async (container, { gameId } = {}) => {
+  // Tear down any prior live state
+  if (_gs) {
+    clearInterval(_gs.timerInterval);
+    if (_gs.visibilityHandler) document.removeEventListener('visibilitychange', _gs.visibilityHandler);
+    if (_gs.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+    _releaseWakeLock();
+    _gs = null;
+  }
+
+  if (!gameId) {
+    container.innerHTML = '<div class="screen"><div class="screen-body"><div class="loading-msg">No game id provided.</div></div></div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="screen">
+      <div class="screen-body">
+        <div class="app-header">
+          <div class="app-logo">Clear<span>The</span>Bench</div>
+        </div>
+        <div class="loading-msg">Loading game...</div>
+      </div>
+    </div>
+  `;
+
+  const game = await db_getGame(gameId);
+  if (!game) {
+    container.innerHTML = `
+      <div class="screen"><div class="screen-body">
+        <div class="app-header"><div class="app-logo">Clear<span>The</span>Bench</div></div>
+        <div class="loading-msg">Game not found. Check the share link.</div>
+      </div></div>
+    `;
+    return;
+  }
+
+  const team = game.ctb_seasons?.ctb_teams || {};
+  const season = game.ctb_seasons || {};
+  const roster = await db_getGameRoster(gameId);
+  const events = await db_getGameEvents(gameId);
+
+  _gs = {
+    game, team, coach: null, season, roster,
+    fieldSize: game.field_size || 4,
+    players: {},
+    timerRunning: false,
+    timerSeconds: 0,
+    timerInterval: null,
+    container,
+    offPlays: 0,
+    defPlays: 0,
+    watchMode: true,
+    realtimeChannel: null,
+  };
+
+  for (const p of roster) {
+    _gs.players[p.id] = {
+      id: p.id, name: p.name, jerseyNumber: p.jersey_number,
+      onField: false, fieldEnteredAt: null, currentStint: 0,
+      totalOnTime: 0, benchSince: 0, totalBenchTime: 0,
+    };
+  }
+
+  _replayEventsForWatch(events);
+  _renderWatchScreen();
+
+  _gs.realtimeChannel = db_subscribeToGame(gameId, (newEvent) => {
+    if (!_gs || !_gs.watchMode) return;
+    _applyEventForWatch(newEvent);
+    _renderWatchScreen();
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (_gs?.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+  });
+});
+
+function _replayEventsForWatch(events) {
+  for (const evt of events) {
+    _applyEventForWatch(evt);
+  }
+}
+
+function _applyEventForWatch(evt) {
+  const ts = evt.timestamp || 0;
+  if (ts > _gs.timerSeconds) _gs.timerSeconds = ts;
+
+  if (evt.event_type === 'sub_on' && evt.player_id && _gs.players[evt.player_id]) {
+    const ps = _gs.players[evt.player_id];
+    if (!ps.onField) ps.totalBenchTime += Math.max(0, ts - ps.benchSince);
+    ps.onField = true;
+    ps.fieldEnteredAt = ts;
+    ps.currentStint = Math.max(0, _gs.timerSeconds - ts);
+  } else if (evt.event_type === 'sub_off' && evt.player_id && _gs.players[evt.player_id]) {
+    const ps = _gs.players[evt.player_id];
+    if (ps.onField && ps.fieldEnteredAt !== null) {
+      ps.totalOnTime += Math.max(0, ts - ps.fieldEnteredAt);
+    }
+    ps.onField = false;
+    ps.fieldEnteredAt = null;
+    ps.benchSince = ts;
+  } else if (evt.event_type === 'play_logged') {
+    const side = evt.meta?.side;
+    if (side === 'offense') _gs.offPlays++;
+    else if (side === 'defense') _gs.defPlays++;
+    // Update on-field players' currentStint to reflect the new play count
+    for (const ps of Object.values(_gs.players)) {
+      if (ps.onField && ps.fieldEnteredAt !== null) {
+        ps.currentStint = _gs.timerSeconds - ps.fieldEnteredAt;
+      }
+    }
+  }
+}
+
+function _renderWatchScreen() {
+  const c = _gs.container;
+  const isFootball = _isFootball();
+  const opponent = _gs.game.opponent ? ' vs ' + _esc(_gs.game.opponent) : '';
+
+  c.innerHTML = `
+    <div class="screen">
+      <div class="screen-body">
+        <div class="game-header">
+          <div class="app-logo">Clear<span>The</span>Bench</div>
+        </div>
+        <div class="spectator-banner">
+          <span class="spectator-dot"></span>
+          <span>Live &mdash; ${_esc(_gs.team?.name || '')}${opponent}</span>
+        </div>
+        ${isFootball ? `
+        <div class="play-tracker watch">
+          <div class="play-btn play-btn-offense readonly">
+            <span class="play-btn-label">OFFENSE</span>
+            <span class="play-btn-count"><span id="off-play-count">${_gs.offPlays || 0}</span> plays</span>
+          </div>
+          <div class="play-btn play-btn-defense readonly">
+            <span class="play-btn-label">DEFENSE</span>
+            <span class="play-btn-count"><span id="def-play-count">${_gs.defPlays || 0}</span> plays</span>
+          </div>
+        </div>
+        ` : ''}
+        <div class="field-zone" id="field-zone"></div>
+        <div class="bench-zone" id="bench-zone"></div>
+      </div>
+    </div>
+  `;
+
+  if (isFootball) {
+    _renderFootballFieldZone();
+    _renderFootballBenchZone();
+  } else {
+    _renderFieldZone();
+    _renderBenchZone();
+  }
 }
 
 async function _logPlay(side) {
