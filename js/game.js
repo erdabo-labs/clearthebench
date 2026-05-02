@@ -1431,17 +1431,9 @@ function _renderFootballFieldZone() {
     if (_getPlayedTime(ps) > 0) { nextOutId = ps.id; break; }
   }
 
-  // Float queued players to the bottom so the active field reads clean
-  const orderedField = [...fieldPlayers].sort((a, b) => {
-    const aQ = queueOutSet.has(a.id) ? 1 : 0;
-    const bQ = queueOutSet.has(b.id) ? 1 : 0;
-    if (aQ !== bQ) return aQ - bQ;
-    return _getPlayedTime(b) - _getPlayedTime(a);
-  });
-
   let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
   html += '<div class="ff-grid">';
-  for (const ps of orderedField) {
+  for (const ps of fieldPlayers) {
     const played = _getPlayedTime(ps);
     const sat = _getBenchWait(ps);
     const isQueued = queueOutSet.has(ps.id);
@@ -1489,18 +1481,10 @@ function _renderFootballBenchZone() {
     if (_getBenchWait(ps) > 0) { nextInId = ps.id; break; }
   }
 
-  // Float queued players to the bottom so the active bench reads clean
-  const orderedBench = [...benchPlayers].sort((a, b) => {
-    const aQ = queueInSet.has(a.id) ? 1 : 0;
-    const bQ = queueInSet.has(b.id) ? 1 : 0;
-    if (aQ !== bQ) return aQ - bQ;
-    return _getBenchWait(b) - _getBenchWait(a);
-  });
-
   let html = '<div class="zone-title">BENCH (' + count + ')</div>';
   html += '<div class="ff-grid">';
-  for (let i = 0; i < orderedBench.length; i++) {
-    const ps = orderedBench[i];
+  for (let i = 0; i < benchPlayers.length; i++) {
+    const ps = benchPlayers[i];
     const sat = _getBenchWait(ps);
     const played = _getPlayedTime(ps);
     const isQueued = queueInSet.has(ps.id);
