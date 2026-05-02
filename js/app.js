@@ -128,13 +128,15 @@ router_register('home', async (container, { coach } = {}) => {
   const activeGames = activeGameChecks.filter(Boolean);
 
   const initials = coach.email.slice(0, 2).toUpperCase();
+  const sportIcon = (sport) => sport === 'football' ? '&#127944;' : '&#9917;';
+
   const teamCards = teams.length
     ? teams.map(t => {
         const activeSeason = t.ctb_seasons?.find(s => s.active);
         const seasonLabel = activeSeason ? activeSeason.name : 'No active season';
         return `
           <div class="team-card" data-team-id="${t.id}">
-            <div class="team-icon">&#9917;</div>
+            <div class="team-icon">${sportIcon(t.sport)}</div>
             <div class="team-info">
               <div class="team-name">${_esc(t.name)}</div>
               <div class="team-meta">${_esc(seasonLabel)}</div>
@@ -152,7 +154,7 @@ router_register('home', async (container, { coach } = {}) => {
       return `
         <div class="team-card active-game-card" data-game-id="${ag.game.id}"
           data-team-id="${ag.team.id}" data-season-id="${ag.season.id}">
-          <div class="team-icon active-dot-wrap">&#9917;</div>
+          <div class="team-icon active-dot-wrap">${sportIcon(ag.team.sport)}</div>
           <div class="team-info">
             <div class="team-name">${_esc(ag.team.name)}${opponent}</div>
             <div class="team-meta active-meta">Active game &mdash; tap to resume</div>
@@ -315,6 +317,19 @@ router_register('create-team', (container, { coach }) => {
             <input class="input-field" id="team-name-input" type="text"
               placeholder="e.g. Red Dragons" autocomplete="off" maxlength="40" />
           </div>
+          <div class="input-group">
+            <label class="input-label">Sport</label>
+            <div class="sport-pills" id="sport-pills">
+              <div class="sport-pill active" data-sport="soccer">
+                <span class="sport-emoji">&#9917;</span>
+                <span class="sport-name">Soccer</span>
+              </div>
+              <div class="sport-pill" data-sport="football">
+                <span class="sport-emoji">&#127944;</span>
+                <span class="sport-name">Flag Football</span>
+              </div>
+            </div>
+          </div>
           <button class="btn-primary" id="btn-create-team">Create Team</button>
           <div id="create-team-msg" class="form-msg"></div>
         </div>
@@ -324,6 +339,15 @@ router_register('create-team', (container, { coach }) => {
 
   container.querySelector('#btn-back')?.addEventListener('click', () => {
     router_navigate('home', { coach });
+  });
+
+  let selectedSport = 'soccer';
+  container.querySelectorAll('.sport-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      container.querySelectorAll('.sport-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      selectedSport = pill.dataset.sport;
+    });
   });
 
   const nameInput = container.querySelector('#team-name-input');
@@ -340,7 +364,7 @@ router_register('create-team', (container, { coach }) => {
 
     createBtn.disabled = true;
     createBtn.textContent = 'Creating...';
-    const team = await db_createTeam({ coachId: coach.id, name, sport: 'soccer' });
+    const team = await db_createTeam({ coachId: coach.id, name, sport: selectedSport });
     createBtn.disabled = false;
     createBtn.textContent = 'Create Team';
 
@@ -408,7 +432,7 @@ router_register('team', async (container, { coach, team } = {}) => {
         </div>
 
         <div class="team-hero">
-          <div class="team-hero-icon">&#9917;</div>
+          <div class="team-hero-icon">${team.sport === 'football' ? '&#127944;' : '&#9917;'}</div>
           <div class="team-hero-name">${_esc(team.name)}</div>
         </div>
 

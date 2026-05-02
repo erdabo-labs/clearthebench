@@ -106,6 +106,10 @@ function _saveCrashRecovery() {
   } catch (e) { /* ignore */ }
 }
 
+function _isFootball() {
+  return _gs?.team?.sport === 'football';
+}
+
 function _removeCrashRecovery() {
   if (!_gs) return;
   try {
@@ -117,8 +121,9 @@ function _removeCrashRecovery() {
 
 router_register('create-game', async (container, { coach, team, season }) => {
   const players = await db_getPlayers(team.id);
+  const isFootball = team.sport === 'football';
 
-  let fieldSize = 4;
+  let fieldSize = isFootball ? 5 : 4;
   let intervalMin = 3;
 
   function renderStepperValue(id, val) {
@@ -165,6 +170,7 @@ router_register('create-game', async (container, { coach, team, season }) => {
             </div>
           </div>
 
+          ${isFootball ? '' : `
           <div class="pregame-section">
             <div class="pregame-label">ROTATION INTERVAL (MINUTES)</div>
             <div class="stepper">
@@ -173,6 +179,7 @@ router_register('create-game', async (container, { coach, team, season }) => {
               <button class="stepper-btn" id="interval-plus">+</button>
             </div>
           </div>
+          `}
 
           <div class="pregame-section">
             <div class="pregame-label">ATTENDANCE</div>
@@ -209,13 +216,15 @@ router_register('create-game', async (container, { coach, team, season }) => {
     if (fieldSize < 7) { fieldSize++; renderStepperValue('field-value', fieldSize); }
   });
 
-  // Interval stepper
-  container.querySelector('#interval-minus').addEventListener('click', () => {
-    if (intervalMin > 1) { intervalMin--; renderStepperValue('interval-value', intervalMin); }
-  });
-  container.querySelector('#interval-plus').addEventListener('click', () => {
-    if (intervalMin < 10) { intervalMin++; renderStepperValue('interval-value', intervalMin); }
-  });
+  // Interval stepper (soccer only)
+  if (!isFootball) {
+    container.querySelector('#interval-minus').addEventListener('click', () => {
+      if (intervalMin > 1) { intervalMin--; renderStepperValue('interval-value', intervalMin); }
+    });
+    container.querySelector('#interval-plus').addEventListener('click', () => {
+      if (intervalMin < 10) { intervalMin++; renderStepperValue('interval-value', intervalMin); }
+    });
+  }
 
   // Attendance toggles
   container.querySelectorAll('.attendance-row').forEach(row => {
@@ -316,9 +325,11 @@ router_register('create-game', async (container, { coach, team, season }) => {
     const game = await db_createGame({
       seasonId: season.id,
       opponent,
-      mode: 'timer_swap',
+      mode: isFootball ? 'play_count' : 'timer_swap',
       fieldSize,
-      strategySnapshot: { mode: 'timer_swap', config: { intervalMinutes: intervalMin } },
+      strategySnapshot: isFootball
+        ? { mode: 'play_count', config: {} }
+        : { mode: 'timer_swap', config: { intervalMinutes: intervalMin } },
       playerIds: allPlayerIds,
     });
 
@@ -404,6 +415,8 @@ router_register('game', async (container, params) => {
     lastAlertAt: 0,
     earlyAlertFired: false,
     fullAlertFired: false,
+    offPlays: 0,
+    defPlays: 0,
   };
 
   // Initialize all players as bench with zeroed stats
@@ -453,6 +466,10 @@ router_register('game', async (container, params) => {
       ps.onField = false;
       ps.fieldEnteredAt = null;
       ps.benchSince = ts;
+    } else if (evt.event_type === 'play_logged') {
+      const side = evt.meta?.side;
+      if (side === 'offense') _gs.offPlays++;
+      else if (side === 'defense') _gs.defPlays++;
     }
   }
 
@@ -490,13 +507,17 @@ router_register('game', async (container, params) => {
     _gs.lastAlertAt = Math.floor(_gs.timerSeconds / alertInterval) * alertInterval;
   }
 
-  // Render game screen
-  _renderGameScreen();
+  // Render game screen — football uses a separate, timer-less UI
+  if (_isFootball()) {
+    _renderFootballGameScreen();
+  } else {
+    _renderGameScreen();
 
-  // If timer was running, resume the interval
-  if (_gs.timerRunning) {
-    _startTimerInterval();
-    _requestWakeLock();
+    // If timer was running, resume the interval
+    if (_gs.timerRunning) {
+      _startTimerInterval();
+      _requestWakeLock();
+    }
   }
 
   _saveCrashRecovery();
@@ -916,7 +937,8 @@ function _handleBenchPlayerTap(playerId) {
   } else {
     _gs.pendingBenchPlayer = playerId;
   }
-  _renderBenchZone();
+  if (_isFootball()) _renderFootballBenchZone();
+  else _renderBenchZone();
 }
 
 async function _handleFieldPlayerTap(fieldPlayerId) {
@@ -954,14 +976,20 @@ async function _handleFieldPlayerTap(fieldPlayerId) {
   };
   _gs.pendingBenchPlayer = null;
 
-  // Reset countdown so next rotation gets full interval
+  // Reset countdown so next rotation gets full interval (soccer only)
   _gs.lastAlertAt = ts;
   _gs.earlyAlertFired = false;
   _gs.fullAlertFired = false;
 
-  _renderFieldZone();
-  _renderBenchZone();
-  _renderTeamStats();
+  if (_isFootball()) {
+    _renderFootballFieldZone();
+    _renderFootballBenchZone();
+    _renderFootballTeamStats();
+  } else {
+    _renderFieldZone();
+    _renderBenchZone();
+    _renderTeamStats();
+  }
   _saveCrashRecovery();
 
   _showUndoToast('Swapped ' + benchPs.name + ' \u2192 ' + fieldPs.name, _handleUndo);
@@ -1232,6 +1260,166 @@ async function _handleEndGame() {
   });
 }
 
+// ── FLAG FOOTBALL LIVE GAME ──────────────────────────────────
+
+function _renderFootballGameScreen() {
+  const c = _gs.container;
+  c.innerHTML = `
+    <div class="screen">
+      <div class="screen-body">
+        <div class="game-header">
+          <div class="app-logo">Clear<span>The</span>Bench</div>
+          <div class="header-action" id="btn-end-game">END</div>
+        </div>
+        <div class="play-tracker">
+          <button class="play-btn play-btn-offense" id="btn-log-offense">
+            <span class="play-btn-label">OFFENSE +1</span>
+            <span class="play-btn-count"><span id="off-play-count">${_gs.offPlays || 0}</span> plays</span>
+          </button>
+          <button class="play-btn play-btn-defense" id="btn-log-defense">
+            <span class="play-btn-label">DEFENSE +1</span>
+            <span class="play-btn-count"><span id="def-play-count">${_gs.defPlays || 0}</span> plays</span>
+          </button>
+        </div>
+        <div class="play-tracker-hint" id="play-tracker-hint">
+          Tap a bench player, then a field player to swap.
+        </div>
+        <div class="field-zone" id="field-zone"></div>
+        <div class="bench-zone" id="bench-zone"></div>
+        <div class="team-stats" id="team-stats"></div>
+      </div>
+    </div>
+  `;
+
+  _renderFootballFieldZone();
+  _renderFootballBenchZone();
+  _renderFootballTeamStats();
+  _bindFootballGameControls();
+}
+
+function _renderFootballFieldZone() {
+  const zone = _gs.container.querySelector('#field-zone');
+  if (!zone) return;
+  const fieldPlayers = _getFieldPlayers();
+  const count = fieldPlayers.length;
+
+  let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
+  for (const ps of fieldPlayers) {
+    const total = _getPlayedTime(ps);
+    html += `
+      <div class="player-chip" data-player-id="${ps.id}">
+        <span>${_esc(ps.name)}</span>
+        <span class="chip-time">${total} P</span>
+      </div>
+    `;
+  }
+  zone.innerHTML = html;
+
+  zone.querySelectorAll('.player-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _handleFieldPlayerTap(chip.dataset.playerId);
+    });
+  });
+}
+
+function _renderFootballBenchZone() {
+  const zone = _gs.container.querySelector('#bench-zone');
+  if (!zone) return;
+
+  const benchPlayers = Object.values(_gs.players)
+    .filter(p => !p.onField)
+    .sort((a, b) => _getBenchWait(b) - _getBenchWait(a));
+  const count = benchPlayers.length;
+
+  let html = '<div class="zone-title">BENCH (' + count + ')</div>';
+  for (const ps of benchPlayers) {
+    const totalSat = _getBenchWait(ps);
+    const isSelected = _gs.pendingBenchPlayer === ps.id;
+    html += `
+      <div class="bench-player${isSelected ? ' selected' : ''}" data-player-id="${ps.id}">
+        <span class="bench-name">${_esc(ps.name)}</span>
+        <span class="bench-wait">${totalSat} sat</span>
+      </div>
+    `;
+  }
+  zone.innerHTML = html;
+
+  zone.querySelectorAll('.bench-player').forEach(row => {
+    row.addEventListener('click', () => {
+      _handleBenchPlayerTap(row.dataset.playerId);
+    });
+  });
+}
+
+function _renderFootballTeamStats() {
+  const zone = _gs.container.querySelector('#team-stats');
+  if (!zone) return;
+
+  const allPlayers = Object.values(_gs.players)
+    .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
+
+  let html = '<div class="zone-title">PLAYER STATS</div>';
+  html += '<div class="stats-header"><span class="stats-name-header">Player</span><span class="stats-col-header">On</span><span class="stats-col-header">Sat</span></div>';
+  for (const ps of allPlayers) {
+    const played = _getPlayedTime(ps);
+    const benched = _getBenchWait(ps);
+    html += `
+      <div class="stats-row" data-player-id="${ps.id}">
+        <span class="stats-name">${_esc(ps.name)}</span>
+        <span class="stats-played">${played}</span>
+        <span class="stats-benched">${benched}</span>
+      </div>
+    `;
+  }
+  zone.innerHTML = html;
+}
+
+function _bindFootballGameControls() {
+  const c = _gs.container;
+  c.querySelector('#btn-end-game')?.addEventListener('click', _handleEndGame);
+  c.querySelector('#btn-log-offense')?.addEventListener('click', () => _logPlay('offense'));
+  c.querySelector('#btn-log-defense')?.addEventListener('click', () => _logPlay('defense'));
+}
+
+async function _logPlay(side) {
+  // Unlock audio on first user gesture (haptic only on football, but harmless)
+  _ensureAudioContext();
+
+  // Each play increments the play count (using timerSeconds as the counter)
+  // and credits all on-field players for that play.
+  _gs.timerSeconds++;
+  if (side === 'offense') _gs.offPlays++;
+  else if (side === 'defense') _gs.defPlays++;
+
+  for (const ps of Object.values(_gs.players)) {
+    if (ps.onField && ps.fieldEnteredAt !== null) {
+      ps.currentStint = _gs.timerSeconds - ps.fieldEnteredAt;
+    }
+  }
+
+  await db_insertEvent({
+    gameId: _gs.game.id,
+    playerId: null,
+    eventType: 'play_logged',
+    timestamp: _gs.timerSeconds,
+    meta: { side },
+  });
+
+  // Update header counters
+  const offEl = _gs.container.querySelector('#off-play-count');
+  const defEl = _gs.container.querySelector('#def-play-count');
+  if (offEl) offEl.textContent = _gs.offPlays;
+  if (defEl) defEl.textContent = _gs.defPlays;
+
+  // Quick haptic feedback on tap
+  try { navigator.vibrate(20); } catch (e) { /* ignore */ }
+
+  _renderFootballFieldZone();
+  _renderFootballBenchZone();
+  _renderFootballTeamStats();
+  _saveCrashRecovery();
+}
+
 // ── GAME SUMMARY SCREEN ──────────────────────────────────────
 
 router_register('game-summary', async (container, { gameId, coach, team, season }) => {
@@ -1252,6 +1440,9 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
     container.innerHTML = '<div class="screen"><div class="screen-body"><div class="loading-msg">Could not load summary.</div></div></div>';
     return;
   }
+
+  const isFootball = game?.mode === 'play_count';
+  const fmtVal = (v) => isFootball ? (v + ' plays') : _fmt(v);
 
   const opponent = game?.opponent || '';
   const maxTime = summary.players.length > 0
@@ -1287,7 +1478,7 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
         <div class="summary-bar">
           <div class="summary-bar-fill" style="width:${pct}%"></div>
         </div>
-        <div class="summary-player-time">${_fmt(p.totalOnTime)}</div>
+        <div class="summary-player-time">${fmtVal(p.totalOnTime)}</div>
       </div>
     `;
   }).join('');
@@ -1302,7 +1493,7 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
         <div class="summary-header">
           <div class="summary-title">GAME SUMMARY</div>
           ${opponent ? '<div class="summary-sub">vs ' + _esc(opponent) + '</div>' : ''}
-          <div class="summary-sub">Total: ${_fmt(summary.gameDuration)}</div>
+          <div class="summary-sub">Total: ${fmtVal(summary.gameDuration)}</div>
         </div>
 
         <div class="equity-stars">${starsHtml}</div>
@@ -1321,10 +1512,10 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
   container.querySelector('#btn-share')?.addEventListener('click', async () => {
     const lines = ['ClearTheBench Game Summary'];
     if (opponent) lines.push('vs ' + opponent);
-    lines.push('Duration: ' + _fmt(summary.gameDuration));
+    lines.push((isFootball ? 'Total plays: ' : 'Duration: ') + fmtVal(summary.gameDuration));
     lines.push('');
     for (const p of summary.players) {
-      lines.push(p.player.name + ': ' + _fmt(p.totalOnTime));
+      lines.push(p.player.name + ': ' + fmtVal(p.totalOnTime));
     }
     const text = lines.join('\n');
 
