@@ -1548,12 +1548,16 @@ function _bindFootballGameControls() {
 
 async function _shareWatchLink() {
   if (!_gs?.game?.id) return;
-  const url = window.location.origin + '/?watch=' + encodeURIComponent(_gs.game.id);
-  const title = 'Watch live — ClearTheBench';
-  const text = 'Live game tracker' + (_gs.team?.name ? ' for ' + _gs.team.name : '');
+  const url = window.location.origin + '/?watch=' + _gs.game.id;
+  const teamName = _gs.team?.name || 'this game';
+  // Embed the URL inside `text` (not `url`). iOS Messages otherwise tries
+  // to render a preview card from `url`, and our SPA serves the same HTML
+  // for /?watch=... as for /, so the preview can collapse to the base
+  // origin. With the URL in `text`, the recipient gets the exact link.
+  const text = 'Watch ' + teamName + ' live — ClearTheBench: ' + url;
 
   if (navigator.share) {
-    try { await navigator.share({ title, text, url }); return; }
+    try { await navigator.share({ text }); return; }
     catch (e) { /* user cancelled — fall through to clipboard */ }
   }
   try {
