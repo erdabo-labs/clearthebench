@@ -1997,14 +1997,32 @@ html, body {
 
 /* ── QUEUED CELL HIGHLIGHTS (football) ─────────────────────── */
 
+.ff-cell.queued-in,
+.ff-cell.queued-out {
+  opacity: 0.55;
+  background: var(--card);
+  min-height: 42px;
+  padding: 8px 10px 6px;
+}
+
 .ff-cell.queued-in {
-  border-color: var(--lime);
-  background: color-mix(in srgb, var(--lime) 22%, var(--card));
+  border-color: color-mix(in srgb, var(--lime) 60%, var(--border));
+  border-style: dashed;
 }
 
 .ff-cell.queued-out {
-  border-color: var(--orange);
-  background: color-mix(in srgb, var(--orange) 22%, var(--card));
+  border-color: color-mix(in srgb, var(--orange) 60%, var(--border));
+  border-style: dashed;
+}
+
+.ff-cell.queued-in .ff-name,
+.ff-cell.queued-out .ff-name {
+  font-size: 14px;
+}
+
+.ff-cell.queued-in .ff-stats,
+.ff-cell.queued-out .ff-stats {
+  font-size: 11px;
 }
 
 .ff-cell.queued-in .ff-hint.hint-in {
