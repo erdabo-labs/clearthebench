@@ -1311,7 +1311,7 @@ function _renderFootballGameScreen() {
           </button>
         </div>
         <div class="play-tracker-hint" id="play-tracker-hint">
-          Tap bench &amp; field players to queue a rotation. Logs &amp; swaps on next play.
+          Tap bench &amp; field players to queue a rotation, then tap ROTATE.
         </div>
         <div class="rotation-queue" id="rotation-queue"></div>
         <div class="field-zone" id="field-zone"></div>
@@ -1375,13 +1375,19 @@ function _renderFootballRotationQueue() {
   const inHTML = inIds.map(id => itemHTML(id, 'in')).join('') || '<div class="queue-empty">— tap bench —</div>';
   const outHTML = outIds.map(id => itemHTML(id, 'out')).join('') || '<div class="queue-empty">— tap field —</div>';
 
-  const clearBtn = _gs.watchMode ? '' :
-    '<button class="queue-clear" id="btn-clear-queue" title="Clear queue">CLEAR</button>';
+  const pairCount = Math.min(inIds.length, outIds.length);
+  const actionBar = _gs.watchMode ? '' : `
+    <div class="queue-actions">
+      <button class="queue-clear" id="btn-clear-queue" title="Clear queue">CLEAR</button>
+      <button class="queue-rotate" id="btn-rotate-queue" ${pairCount === 0 ? 'disabled' : ''}>
+        ROTATE${pairCount > 0 ? ' &nbsp;·&nbsp; ' + pairCount + (pairCount === 1 ? ' pair' : ' pairs') : ''}
+      </button>
+    </div>
+  `;
 
   zone.innerHTML = `
     <div class="queue-header">
       <span class="queue-title">NEXT ROTATION</span>
-      ${clearBtn}
     </div>
     <div class="queue-cols">
       <div class="queue-col queue-col-in">
@@ -1393,6 +1399,7 @@ function _renderFootballRotationQueue() {
         <div class="queue-col-list">${outHTML}</div>
       </div>
     </div>
+    ${actionBar}
   `;
   zone.classList.add('visible');
 
@@ -1405,6 +1412,7 @@ function _renderFootballRotationQueue() {
       _renderFootballRotationQueue();
       _broadcastQueue();
     });
+    zone.querySelector('#btn-rotate-queue')?.addEventListener('click', _executeQueueRotation);
   }
 }
 
@@ -1414,18 +1422,22 @@ function _renderFootballFieldZone() {
   const fieldPlayers = _getFieldPlayers();
   const count = fieldPlayers.length;
 
-  // The field player with the most plays is the "suggested next out"
-  const maxPlayed = fieldPlayers.length > 0
-    ? Math.max(...fieldPlayers.map(p => _getPlayedTime(p)))
-    : 0;
+  // "Next out" advances past any players already queued out.
+  const queueOutSet = new Set(_gs.queueOut || []);
+  let nextOutId = null;
+  const sortedByPlayed = [...fieldPlayers].sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
+  for (const ps of sortedByPlayed) {
+    if (queueOutSet.has(ps.id)) continue;
+    if (_getPlayedTime(ps) > 0) { nextOutId = ps.id; break; }
+  }
 
   let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
   html += '<div class="ff-grid">';
   for (const ps of fieldPlayers) {
     const played = _getPlayedTime(ps);
     const sat = _getBenchWait(ps);
-    const isSuggestedOut = played > 0 && played === maxPlayed && fieldPlayers.length > 1;
-    const isQueued = (_gs.queueOut || []).includes(ps.id);
+    const isQueued = queueOutSet.has(ps.id);
+    const isSuggestedOut = !isQueued && ps.id === nextOutId;
     let cls = 'ff-cell field';
     if (isQueued) cls += ' queued-out';
     else if (isSuggestedOut) cls += ' suggest-out';
@@ -1461,14 +1473,22 @@ function _renderFootballBenchZone() {
     .sort((a, b) => _getBenchWait(b) - _getBenchWait(a));
   const count = benchPlayers.length;
 
+  // "Next in" advances past any bench players already queued in.
+  const queueInSet = new Set(_gs.queueIn || []);
+  let nextInId = null;
+  for (const ps of benchPlayers) { // already sorted by most-sat desc
+    if (queueInSet.has(ps.id)) continue;
+    if (_getBenchWait(ps) > 0) { nextInId = ps.id; break; }
+  }
+
   let html = '<div class="zone-title">BENCH (' + count + ')</div>';
   html += '<div class="ff-grid">';
   for (let i = 0; i < benchPlayers.length; i++) {
     const ps = benchPlayers[i];
     const sat = _getBenchWait(ps);
     const played = _getPlayedTime(ps);
-    const isQueued = (_gs.queueIn || []).includes(ps.id);
-    const isSuggestedIn = i === 0 && benchPlayers.length > 1 && sat > 0;
+    const isQueued = queueInSet.has(ps.id);
+    const isSuggestedIn = !isQueued && ps.id === nextInId;
     let cls = 'ff-cell bench';
     if (isQueued) cls += ' queued-in';
     else if (isSuggestedIn) cls += ' suggest-in';
@@ -1619,11 +1639,6 @@ router_register('watch', async (container, { gameId } = {}) => {
   _gs.realtimeChannel = db_subscribeToGame(gameId, (newEvent) => {
     if (!_gs || !_gs.watchMode) return;
     _applyEventForWatch(newEvent);
-    // A play_logged event clears any queue that was in flight
-    if (newEvent.event_type === 'play_logged') {
-      _gs.queueIn = [];
-      _gs.queueOut = [];
-    }
     _renderWatchScreen();
   });
 
@@ -1752,9 +1767,28 @@ async function _logPlay(side) {
     meta: { side },
   });
 
-  // Execute any queued rotation — pairs swap, extras stay
-  const ts = _gs.timerSeconds;
+  // Update header counters
+  const offEl = _gs.container.querySelector('#off-play-count');
+  const defEl = _gs.container.querySelector('#def-play-count');
+  if (offEl) offEl.textContent = _gs.offPlays;
+  if (defEl) defEl.textContent = _gs.defPlays;
+
+  // Quick haptic feedback on tap
+  try { navigator.vibrate(20); } catch (e) { /* ignore */ }
+
+  _renderFootballFieldZone();
+  _renderFootballBenchZone();
+  _renderFootballRotationQueue();
+  _renderFootballTeamStats();
+  _saveCrashRecovery();
+}
+
+async function _executeQueueRotation() {
+  if (!_gs) return;
   const pairCount = Math.min(_gs.queueIn.length, _gs.queueOut.length);
+  if (pairCount === 0) return;
+
+  const ts = _gs.timerSeconds;
   for (let i = 0; i < pairCount; i++) {
     const inId = _gs.queueIn[i];
     const outId = _gs.queueOut[i];
@@ -1777,21 +1811,11 @@ async function _logPlay(side) {
     inPs.currentStint = 0;
   }
 
-  // Always clear queue on play (whether or not it executed)
-  if (_gs.queueIn.length || _gs.queueOut.length) {
-    _gs.queueIn = [];
-    _gs.queueOut = [];
-    _broadcastQueue();
-  }
+  _gs.queueIn = [];
+  _gs.queueOut = [];
+  _broadcastQueue();
 
-  // Update header counters
-  const offEl = _gs.container.querySelector('#off-play-count');
-  const defEl = _gs.container.querySelector('#def-play-count');
-  if (offEl) offEl.textContent = _gs.offPlays;
-  if (defEl) defEl.textContent = _gs.defPlays;
-
-  // Quick haptic feedback on tap
-  try { navigator.vibrate(20); } catch (e) { /* ignore */ }
+  try { navigator.vibrate([30, 40, 30]); } catch (e) { /* ignore */ }
 
   _renderFootballFieldZone();
   _renderFootballBenchZone();
