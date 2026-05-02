@@ -1679,3 +1679,99 @@ html, body {
   text-align: center;
   margin-bottom: 12px;
 }
+
+/* ── FOOTBALL FIELD/BENCH GRID ─────────────────────────────── */
+
+.ff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ff-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 12px 10px;
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.08s, background 0.15s, border-color 0.15s;
+  min-height: 56px;
+}
+
+.ff-cell:active {
+  transform: scale(0.98);
+}
+
+.ff-cell.selected {
+  background: var(--card2);
+  border-color: var(--lime);
+}
+
+.ff-cell.suggest-out {
+  border-color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 8%, var(--card));
+}
+
+.ff-cell.suggest-in {
+  border-color: var(--lime);
+  background: color-mix(in srgb, var(--lime) 10%, var(--card));
+}
+
+.ff-name {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.ff-stats {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+.ff-stat-on {
+  color: var(--lime);
+  font-weight: 600;
+}
+
+.ff-stat-off {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+.ff-stat-sep {
+  opacity: 0.5;
+}
+
+.ff-hint {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.ff-cell.suggest-out .ff-hint {
+  color: #1a0e00;
+  background: var(--orange);
+}
+
+.ff-cell.suggest-in .ff-hint {
+  color: #0e1f0a;
+  background: var(--lime);
+}

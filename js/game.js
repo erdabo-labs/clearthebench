@@ -123,7 +123,7 @@ router_register('create-game', async (container, { coach, team, season }) => {
   const players = await db_getPlayers(team.id);
   const isFootball = team.sport === 'football';
 
-  let fieldSize = isFootball ? 5 : 4;
+  let fieldSize = isFootball ? 8 : 4;
   let intervalMin = 3;
 
   function renderStepperValue(id, val) {
@@ -208,12 +208,13 @@ router_register('create-game', async (container, { coach, team, season }) => {
     router_navigate('team', { coach, team });
   });
 
-  // Field size stepper
+  // Field size stepper — football allows up to 11 on field
+  const maxField = isFootball ? 11 : 7;
   container.querySelector('#field-minus').addEventListener('click', () => {
     if (fieldSize > 3) { fieldSize--; renderStepperValue('field-value', fieldSize); }
   });
   container.querySelector('#field-plus').addEventListener('click', () => {
-    if (fieldSize < 7) { fieldSize++; renderStepperValue('field-value', fieldSize); }
+    if (fieldSize < maxField) { fieldSize++; renderStepperValue('field-value', fieldSize); }
   });
 
   // Interval stepper (soccer only)
@@ -1303,21 +1304,31 @@ function _renderFootballFieldZone() {
   const fieldPlayers = _getFieldPlayers();
   const count = fieldPlayers.length;
 
+  // The field player with the most plays is the "suggested next out"
+  const maxPlayed = fieldPlayers.length > 0
+    ? Math.max(...fieldPlayers.map(p => _getPlayedTime(p)))
+    : 0;
+
   let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
+  html += '<div class="ff-grid">';
   for (const ps of fieldPlayers) {
-    const total = _getPlayedTime(ps);
+    const played = _getPlayedTime(ps);
+    const sat = _getBenchWait(ps);
+    const isSuggestedOut = played > 0 && played === maxPlayed && fieldPlayers.length > 1;
     html += `
-      <div class="player-chip" data-player-id="${ps.id}">
-        <span>${_esc(ps.name)}</span>
-        <span class="chip-time">${total} P</span>
+      <div class="ff-cell field${isSuggestedOut ? ' suggest-out' : ''}" data-player-id="${ps.id}">
+        ${isSuggestedOut ? '<span class="ff-hint">next out</span>' : ''}
+        <div class="ff-name">${_esc(ps.name)}</div>
+        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
       </div>
     `;
   }
+  html += '</div>';
   zone.innerHTML = html;
 
-  zone.querySelectorAll('.player-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      _handleFieldPlayerTap(chip.dataset.playerId);
+  zone.querySelectorAll('.ff-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      _handleFieldPlayerTap(cell.dataset.playerId);
     });
   });
 }
@@ -1332,21 +1343,31 @@ function _renderFootballBenchZone() {
   const count = benchPlayers.length;
 
   let html = '<div class="zone-title">BENCH (' + count + ')</div>';
-  for (const ps of benchPlayers) {
-    const totalSat = _getBenchWait(ps);
+  html += '<div class="ff-grid">';
+  for (let i = 0; i < benchPlayers.length; i++) {
+    const ps = benchPlayers[i];
+    const sat = _getBenchWait(ps);
+    const played = _getPlayedTime(ps);
     const isSelected = _gs.pendingBenchPlayer === ps.id;
+    // First in sorted-by-most-sat list = suggested next in (only if there's more than one bench player)
+    const isSuggestedIn = i === 0 && benchPlayers.length > 1 && sat > 0;
+    let cls = 'ff-cell bench';
+    if (isSelected) cls += ' selected';
+    if (isSuggestedIn) cls += ' suggest-in';
     html += `
-      <div class="bench-player${isSelected ? ' selected' : ''}" data-player-id="${ps.id}">
-        <span class="bench-name">${_esc(ps.name)}</span>
-        <span class="bench-wait">${totalSat} sat</span>
+      <div class="${cls}" data-player-id="${ps.id}">
+        ${isSuggestedIn ? '<span class="ff-hint">next in</span>' : ''}
+        <div class="ff-name">${_esc(ps.name)}</div>
+        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
       </div>
     `;
   }
+  html += '</div>';
   zone.innerHTML = html;
 
-  zone.querySelectorAll('.bench-player').forEach(row => {
-    row.addEventListener('click', () => {
-      _handleBenchPlayerTap(row.dataset.playerId);
+  zone.querySelectorAll('.ff-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      _handleBenchPlayerTap(cell.dataset.playerId);
     });
   });
 }
