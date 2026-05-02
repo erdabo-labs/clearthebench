@@ -1575,3 +1575,462 @@ html, body {
     padding-right: 24px;
   }
 }
+
+/* ── SPORT PILLS (create-team) ─────────────────────────────── */
+
+.sport-pills {
+  display: flex;
+  gap: 8px;
+}
+
+.sport-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sport-pill:active {
+  transform: scale(0.97);
+}
+
+.sport-pill.active {
+  background: var(--card2);
+  border-color: var(--lime);
+}
+
+.sport-emoji {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.sport-name {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── FLAG FOOTBALL PLAY TRACKER ────────────────────────────── */
+
+.play-tracker {
+  display: flex;
+  gap: 8px;
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.play-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 72px;
+  padding: 12px 8px;
+  font-family: 'DM Sans', sans-serif;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: transform 0.08s, filter 0.15s;
+  user-select: none;
+}
+
+.play-btn:active {
+  transform: scale(0.97);
+  filter: brightness(0.92);
+}
+
+.play-btn-offense {
+  background: var(--lime);
+  color: #0e1f0a;
+}
+
+.play-btn-defense {
+  background: var(--blue);
+  color: #001b2e;
+}
+
+.play-btn-label {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.play-btn-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.play-tracker-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+/* ── FOOTBALL FIELD/BENCH GRID ─────────────────────────────── */
+
+.ff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ff-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 12px 10px;
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.08s, background 0.15s, border-color 0.15s;
+  min-height: 56px;
+}
+
+.ff-cell:active {
+  transform: scale(0.98);
+}
+
+.ff-cell.selected {
+  background: var(--card2);
+  border-color: var(--lime);
+}
+
+.ff-cell.suggest-out {
+  border-color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 8%, var(--card));
+}
+
+.ff-cell.suggest-in {
+  border-color: var(--lime);
+  background: color-mix(in srgb, var(--lime) 10%, var(--card));
+}
+
+.ff-name {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.ff-stats {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+.ff-stat-on {
+  color: var(--lime);
+  font-weight: 600;
+}
+
+.ff-stat-off {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+.ff-stat-sep {
+  opacity: 0.5;
+}
+
+.ff-hint {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.ff-cell.suggest-out .ff-hint {
+  color: #1a0e00;
+  background: var(--orange);
+}
+
+.ff-cell.suggest-in .ff-hint {
+  color: #0e1f0a;
+  background: var(--lime);
+}
+
+/* ── HEADER ACTIONS (multi-button) ─────────────────────────── */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.08s;
+}
+
+.header-btn:active {
+  transform: scale(0.95);
+  background: var(--card);
+}
+
+/* ── SPECTATOR VIEW ────────────────────────────────────────── */
+
+.spectator-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+.spectator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lime);
+  animation: spectator-pulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spectator-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.play-btn.readonly {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.95;
+}
+
+.play-tracker.watch {
+  margin-bottom: 12px;
+}
+
+/* ── ROTATION QUEUE (football) ─────────────────────────────── */
+
+.rotation-queue {
+  display: none;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.rotation-queue.visible {
+  display: block;
+}
+
+.queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.queue-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+.queue-actions {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 10px;
+}
+
+.queue-clear {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, transform 0.08s;
+}
+
+.queue-clear:active {
+  color: var(--red);
+  border-color: var(--red);
+  transform: scale(0.97);
+}
+
+.queue-rotate {
+  flex: 1;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #0e1f0a;
+  background: var(--lime);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.08s;
+}
+
+.queue-rotate:active:not(:disabled) {
+  transform: scale(0.97);
+  filter: brightness(0.92);
+}
+
+.queue-rotate:disabled {
+  background: var(--card);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.queue-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.queue-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
+.queue-col-in {
+  background: color-mix(in srgb, var(--lime) 8%, transparent);
+  border-color: color-mix(in srgb, var(--lime) 40%, var(--border));
+}
+
+.queue-col-out {
+  background: color-mix(in srgb, var(--orange) 8%, transparent);
+  border-color: color-mix(in srgb, var(--orange) 40%, var(--border));
+}
+
+.queue-col-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+
+.queue-col-in .queue-col-label { color: var(--lime); }
+.queue-col-out .queue-col-label { color: var(--orange); }
+
+.queue-col-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.queue-item {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 4px;
+  word-break: break-word;
+}
+
+.queue-item.in {
+  background: color-mix(in srgb, var(--lime) 22%, transparent);
+}
+
+.queue-item.out {
+  background: color-mix(in srgb, var(--orange) 22%, transparent);
+}
+
+.queue-empty {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 4px;
+  font-style: italic;
+}
+
+/* ── QUEUED CELL HIGHLIGHTS (football) ─────────────────────── */
+
+.ff-cell.queued-in,
+.ff-cell.queued-out {
+  opacity: 0.55;
+  background: var(--card);
+  min-height: 42px;
+  padding: 8px 10px 6px;
+}
+
+.ff-cell.queued-in {
+  border-color: color-mix(in srgb, var(--lime) 60%, var(--border));
+  border-style: dashed;
+}
+
+.ff-cell.queued-out {
+  border-color: color-mix(in srgb, var(--orange) 60%, var(--border));
+  border-style: dashed;
+}
+
+.ff-cell.queued-in .ff-name,
+.ff-cell.queued-out .ff-name {
+  font-size: 14px;
+}
+
+.ff-cell.queued-in .ff-stats,
+.ff-cell.queued-out .ff-stats {
+  font-size: 11px;
+}
+
+.ff-cell.queued-in .ff-hint.hint-in {
+  background: var(--lime);
+  color: #0e1f0a;
+}
+
+.ff-cell.queued-out .ff-hint.hint-out {
+  background: var(--orange);
+  color: #1a0e00;
+}

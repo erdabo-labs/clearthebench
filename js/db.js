@@ -228,6 +228,24 @@ async function db_deleteRecentEvents(gameId, count) {
   return true;
 }
 
+// ── REALTIME (spectator) ─────────────────────────────────────
+
+function db_subscribeToGame(gameId, onEvent) {
+  return _db
+    .channel('ctb_game_' + gameId)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'ctb_game_events',
+      filter: 'game_id=eq.' + gameId,
+    }, (payload) => onEvent(payload.new))
+    .subscribe();
+}
+
+function db_unsubscribe(channel) {
+  if (channel) _db.removeChannel(channel);
+}
+
 // ── ACTIVE GAME ───────────────────────────────────────────────
 
 async function db_getActiveGame(seasonId) {

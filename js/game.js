@@ -106,6 +106,10 @@ function _saveCrashRecovery() {
   } catch (e) { /* ignore */ }
 }
 
+function _isFootball() {
+  return _gs?.team?.sport === 'football';
+}
+
 function _removeCrashRecovery() {
   if (!_gs) return;
   try {
@@ -117,8 +121,9 @@ function _removeCrashRecovery() {
 
 router_register('create-game', async (container, { coach, team, season }) => {
   const players = await db_getPlayers(team.id);
+  const isFootball = team.sport === 'football';
 
-  let fieldSize = 4;
+  let fieldSize = isFootball ? 8 : 4;
   let intervalMin = 3;
 
   function renderStepperValue(id, val) {
@@ -165,6 +170,7 @@ router_register('create-game', async (container, { coach, team, season }) => {
             </div>
           </div>
 
+          ${isFootball ? '' : `
           <div class="pregame-section">
             <div class="pregame-label">ROTATION INTERVAL (MINUTES)</div>
             <div class="stepper">
@@ -173,6 +179,7 @@ router_register('create-game', async (container, { coach, team, season }) => {
               <button class="stepper-btn" id="interval-plus">+</button>
             </div>
           </div>
+          `}
 
           <div class="pregame-section">
             <div class="pregame-label">ATTENDANCE</div>
@@ -201,21 +208,24 @@ router_register('create-game', async (container, { coach, team, season }) => {
     router_navigate('team', { coach, team });
   });
 
-  // Field size stepper
+  // Field size stepper — football allows up to 11 on field
+  const maxField = isFootball ? 11 : 7;
   container.querySelector('#field-minus').addEventListener('click', () => {
     if (fieldSize > 3) { fieldSize--; renderStepperValue('field-value', fieldSize); }
   });
   container.querySelector('#field-plus').addEventListener('click', () => {
-    if (fieldSize < 7) { fieldSize++; renderStepperValue('field-value', fieldSize); }
+    if (fieldSize < maxField) { fieldSize++; renderStepperValue('field-value', fieldSize); }
   });
 
-  // Interval stepper
-  container.querySelector('#interval-minus').addEventListener('click', () => {
-    if (intervalMin > 1) { intervalMin--; renderStepperValue('interval-value', intervalMin); }
-  });
-  container.querySelector('#interval-plus').addEventListener('click', () => {
-    if (intervalMin < 10) { intervalMin++; renderStepperValue('interval-value', intervalMin); }
-  });
+  // Interval stepper (soccer only)
+  if (!isFootball) {
+    container.querySelector('#interval-minus').addEventListener('click', () => {
+      if (intervalMin > 1) { intervalMin--; renderStepperValue('interval-value', intervalMin); }
+    });
+    container.querySelector('#interval-plus').addEventListener('click', () => {
+      if (intervalMin < 10) { intervalMin++; renderStepperValue('interval-value', intervalMin); }
+    });
+  }
 
   // Attendance toggles
   container.querySelectorAll('.attendance-row').forEach(row => {
@@ -316,9 +326,11 @@ router_register('create-game', async (container, { coach, team, season }) => {
     const game = await db_createGame({
       seasonId: season.id,
       opponent,
-      mode: 'timer_swap',
+      mode: isFootball ? 'play_count' : 'timer_swap',
       fieldSize,
-      strategySnapshot: { mode: 'timer_swap', config: { intervalMinutes: intervalMin } },
+      strategySnapshot: isFootball
+        ? { mode: 'play_count', config: {} }
+        : { mode: 'timer_swap', config: { intervalMinutes: intervalMin } },
       playerIds: allPlayerIds,
     });
 
@@ -353,6 +365,8 @@ router_register('game', async (container, params) => {
     if (_gs.visibilityHandler) {
       document.removeEventListener('visibilitychange', _gs.visibilityHandler);
     }
+    if (_gs.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+    if (_gs.queueChannel) db_unsubscribe(_gs.queueChannel);
     _releaseWakeLock();
     _gs = null;
   }
@@ -404,6 +418,11 @@ router_register('game', async (container, params) => {
     lastAlertAt: 0,
     earlyAlertFired: false,
     fullAlertFired: false,
+    offPlays: 0,
+    defPlays: 0,
+    queueIn: [],
+    queueOut: [],
+    queueChannel: null,
   };
 
   // Initialize all players as bench with zeroed stats
@@ -453,6 +472,10 @@ router_register('game', async (container, params) => {
       ps.onField = false;
       ps.fieldEnteredAt = null;
       ps.benchSince = ts;
+    } else if (evt.event_type === 'play_logged') {
+      const side = evt.meta?.side;
+      if (side === 'offense') _gs.offPlays++;
+      else if (side === 'defense') _gs.defPlays++;
     }
   }
 
@@ -490,13 +513,17 @@ router_register('game', async (container, params) => {
     _gs.lastAlertAt = Math.floor(_gs.timerSeconds / alertInterval) * alertInterval;
   }
 
-  // Render game screen
-  _renderGameScreen();
+  // Render game screen — football uses a separate, timer-less UI
+  if (_isFootball()) {
+    _renderFootballGameScreen();
+  } else {
+    _renderGameScreen();
 
-  // If timer was running, resume the interval
-  if (_gs.timerRunning) {
-    _startTimerInterval();
-    _requestWakeLock();
+    // If timer was running, resume the interval
+    if (_gs.timerRunning) {
+      _startTimerInterval();
+      _requestWakeLock();
+    }
   }
 
   _saveCrashRecovery();
@@ -910,8 +937,17 @@ function _checkRotationAlert() {
 }
 
 function _handleBenchPlayerTap(playerId) {
+  if (_isFootball()) {
+    // Football: toggle player in the "going in" rotation queue
+    const idx = _gs.queueIn.indexOf(playerId);
+    if (idx >= 0) _gs.queueIn.splice(idx, 1);
+    else _gs.queueIn.push(playerId);
+    _renderFootballBenchZone();
+    _renderFootballRotationQueue();
+    _broadcastQueue();
+    return;
+  }
   if (_gs.pendingBenchPlayer === playerId) {
-    // Deselect
     _gs.pendingBenchPlayer = null;
   } else {
     _gs.pendingBenchPlayer = playerId;
@@ -920,6 +956,16 @@ function _handleBenchPlayerTap(playerId) {
 }
 
 async function _handleFieldPlayerTap(fieldPlayerId) {
+  if (_isFootball()) {
+    // Football: toggle player in the "going out" rotation queue
+    const idx = _gs.queueOut.indexOf(fieldPlayerId);
+    if (idx >= 0) _gs.queueOut.splice(idx, 1);
+    else _gs.queueOut.push(fieldPlayerId);
+    _renderFootballFieldZone();
+    _renderFootballRotationQueue();
+    _broadcastQueue();
+    return;
+  }
   if (!_gs.pendingBenchPlayer) return;
 
   const benchId = _gs.pendingBenchPlayer;
@@ -954,14 +1000,20 @@ async function _handleFieldPlayerTap(fieldPlayerId) {
   };
   _gs.pendingBenchPlayer = null;
 
-  // Reset countdown so next rotation gets full interval
+  // Reset countdown so next rotation gets full interval (soccer only)
   _gs.lastAlertAt = ts;
   _gs.earlyAlertFired = false;
   _gs.fullAlertFired = false;
 
-  _renderFieldZone();
-  _renderBenchZone();
-  _renderTeamStats();
+  if (_isFootball()) {
+    _renderFootballFieldZone();
+    _renderFootballBenchZone();
+    _renderFootballTeamStats();
+  } else {
+    _renderFieldZone();
+    _renderBenchZone();
+    _renderTeamStats();
+  }
   _saveCrashRecovery();
 
   _showUndoToast('Swapped ' + benchPs.name + ' \u2192 ' + fieldPs.name, _handleUndo);
@@ -1221,6 +1273,8 @@ async function _handleEndGame() {
     timestamp: _gs.timerSeconds,
   });
 
+  if (_gs.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+  if (_gs.queueChannel) db_unsubscribe(_gs.queueChannel);
   _releaseWakeLock();
   _removeCrashRecovery();
 
@@ -1230,6 +1284,544 @@ async function _handleEndGame() {
     team: _gs.team,
     season: _gs.season,
   });
+}
+
+// ── FLAG FOOTBALL LIVE GAME ──────────────────────────────────
+
+function _renderFootballGameScreen() {
+  const c = _gs.container;
+  c.innerHTML = `
+    <div class="screen">
+      <div class="screen-body">
+        <div class="game-header">
+          <div class="app-logo">Clear<span>The</span>Bench</div>
+          <div class="header-actions">
+            <button class="header-btn" id="btn-share-watch" title="Share spectator link">SHARE</button>
+            <div class="header-action" id="btn-end-game">END</div>
+          </div>
+        </div>
+        <div class="play-tracker">
+          <button class="play-btn play-btn-offense" id="btn-log-offense">
+            <span class="play-btn-label">OFFENSE +1</span>
+            <span class="play-btn-count"><span id="off-play-count">${_gs.offPlays || 0}</span> plays</span>
+          </button>
+          <button class="play-btn play-btn-defense" id="btn-log-defense">
+            <span class="play-btn-label">DEFENSE +1</span>
+            <span class="play-btn-count"><span id="def-play-count">${_gs.defPlays || 0}</span> plays</span>
+          </button>
+        </div>
+        <div class="play-tracker-hint" id="play-tracker-hint">
+          Tap bench &amp; field players to queue a rotation, then tap ROTATE.
+        </div>
+        <div class="rotation-queue" id="rotation-queue"></div>
+        <div class="field-zone" id="field-zone"></div>
+        <div class="bench-zone" id="bench-zone"></div>
+        <div class="team-stats" id="team-stats"></div>
+      </div>
+    </div>
+  `;
+
+  _renderFootballFieldZone();
+  _renderFootballBenchZone();
+  _renderFootballRotationQueue();
+  _renderFootballTeamStats();
+  _bindFootballGameControls();
+  _setupQueueChannel();
+}
+
+function _setupQueueChannel() {
+  // Coach side broadcasts queue state to spectator(s)
+  if (_gs.queueChannel) return;
+  if (_gs.watchMode) return;
+  if (!_gs?.game?.id) return;
+  try {
+    _gs.queueChannel = _db.channel('ctb_queue_' + _gs.game.id, {
+      config: { broadcast: { self: false } },
+    });
+    _gs.queueChannel.subscribe();
+  } catch (e) { /* ignore — broadcast just won't work */ }
+}
+
+function _broadcastQueue() {
+  if (!_gs?.queueChannel) return;
+  try {
+    _gs.queueChannel.send({
+      type: 'broadcast',
+      event: 'queue',
+      payload: { in: _gs.queueIn.slice(), out: _gs.queueOut.slice() },
+    });
+  } catch (e) { /* ignore */ }
+}
+
+function _renderFootballRotationQueue() {
+  const zone = _gs.container?.querySelector('#rotation-queue');
+  if (!zone) return;
+
+  const inIds = _gs.queueIn || [];
+  const outIds = _gs.queueOut || [];
+
+  if (inIds.length === 0 && outIds.length === 0) {
+    zone.innerHTML = '';
+    zone.classList.remove('visible');
+    return;
+  }
+
+  const itemHTML = (id, side) => {
+    const ps = _gs.players[id];
+    if (!ps) return '';
+    return '<div class="queue-item ' + side + '">' + _esc(ps.name) + '</div>';
+  };
+
+  const inHTML = inIds.map(id => itemHTML(id, 'in')).join('') || '<div class="queue-empty">— tap bench —</div>';
+  const outHTML = outIds.map(id => itemHTML(id, 'out')).join('') || '<div class="queue-empty">— tap field —</div>';
+
+  const pairCount = Math.min(inIds.length, outIds.length);
+  const actionBar = _gs.watchMode ? '' : `
+    <div class="queue-actions">
+      <button class="queue-clear" id="btn-clear-queue" title="Clear queue">CLEAR</button>
+      <button class="queue-rotate" id="btn-rotate-queue" ${pairCount === 0 ? 'disabled' : ''}>
+        ROTATE${pairCount > 0 ? ' &nbsp;·&nbsp; ' + pairCount + (pairCount === 1 ? ' pair' : ' pairs') : ''}
+      </button>
+    </div>
+  `;
+
+  zone.innerHTML = `
+    <div class="queue-header">
+      <span class="queue-title">NEXT ROTATION</span>
+    </div>
+    <div class="queue-cols">
+      <div class="queue-col queue-col-in">
+        <div class="queue-col-label">GOING IN</div>
+        <div class="queue-col-list">${inHTML}</div>
+      </div>
+      <div class="queue-col queue-col-out">
+        <div class="queue-col-label">GOING OUT</div>
+        <div class="queue-col-list">${outHTML}</div>
+      </div>
+    </div>
+    ${actionBar}
+  `;
+  zone.classList.add('visible');
+
+  if (!_gs.watchMode) {
+    zone.querySelector('#btn-clear-queue')?.addEventListener('click', () => {
+      _gs.queueIn = [];
+      _gs.queueOut = [];
+      _renderFootballFieldZone();
+      _renderFootballBenchZone();
+      _renderFootballRotationQueue();
+      _broadcastQueue();
+    });
+    zone.querySelector('#btn-rotate-queue')?.addEventListener('click', _executeQueueRotation);
+  }
+}
+
+function _renderFootballFieldZone() {
+  const zone = _gs.container.querySelector('#field-zone');
+  if (!zone) return;
+  const fieldPlayers = _getFieldPlayers();
+  const count = fieldPlayers.length;
+
+  // "Next out" advances past any players already queued out.
+  const queueOutSet = new Set(_gs.queueOut || []);
+  let nextOutId = null;
+  const sortedByPlayed = [...fieldPlayers].sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
+  for (const ps of sortedByPlayed) {
+    if (queueOutSet.has(ps.id)) continue;
+    if (_getPlayedTime(ps) > 0) { nextOutId = ps.id; break; }
+  }
+
+  let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
+  html += '<div class="ff-grid">';
+  for (const ps of fieldPlayers) {
+    const played = _getPlayedTime(ps);
+    const sat = _getBenchWait(ps);
+    const isQueued = queueOutSet.has(ps.id);
+    const isSuggestedOut = !isQueued && ps.id === nextOutId;
+    let cls = 'ff-cell field';
+    if (isQueued) cls += ' queued-out';
+    else if (isSuggestedOut) cls += ' suggest-out';
+    let hint = '';
+    if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
+    else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
+    html += `
+      <div class="${cls}" data-player-id="${ps.id}">
+        ${hint}
+        <div class="ff-name">${_esc(ps.name)}</div>
+        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
+      </div>
+    `;
+  }
+  html += '</div>';
+  zone.innerHTML = html;
+
+  if (!_gs.watchMode) {
+    zone.querySelectorAll('.ff-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        _handleFieldPlayerTap(cell.dataset.playerId);
+      });
+    });
+  }
+}
+
+function _renderFootballBenchZone() {
+  const zone = _gs.container.querySelector('#bench-zone');
+  if (!zone) return;
+
+  const benchPlayers = Object.values(_gs.players)
+    .filter(p => !p.onField)
+    .sort((a, b) => _getBenchWait(b) - _getBenchWait(a));
+  const count = benchPlayers.length;
+
+  // "Next in" advances past any bench players already queued in.
+  const queueInSet = new Set(_gs.queueIn || []);
+  let nextInId = null;
+  for (const ps of benchPlayers) { // already sorted by most-sat desc
+    if (queueInSet.has(ps.id)) continue;
+    if (_getBenchWait(ps) > 0) { nextInId = ps.id; break; }
+  }
+
+  let html = '<div class="zone-title">BENCH (' + count + ')</div>';
+  html += '<div class="ff-grid">';
+  for (let i = 0; i < benchPlayers.length; i++) {
+    const ps = benchPlayers[i];
+    const sat = _getBenchWait(ps);
+    const played = _getPlayedTime(ps);
+    const isQueued = queueInSet.has(ps.id);
+    const isSuggestedIn = !isQueued && ps.id === nextInId;
+    let cls = 'ff-cell bench';
+    if (isQueued) cls += ' queued-in';
+    else if (isSuggestedIn) cls += ' suggest-in';
+    let hint = '';
+    if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
+    else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
+    html += `
+      <div class="${cls}" data-player-id="${ps.id}">
+        ${hint}
+        <div class="ff-name">${_esc(ps.name)}</div>
+        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
+      </div>
+    `;
+  }
+  html += '</div>';
+  zone.innerHTML = html;
+
+  if (!_gs.watchMode) {
+    zone.querySelectorAll('.ff-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        _handleBenchPlayerTap(cell.dataset.playerId);
+      });
+    });
+  }
+}
+
+function _renderFootballTeamStats() {
+  const zone = _gs.container.querySelector('#team-stats');
+  if (!zone) return;
+
+  const allPlayers = Object.values(_gs.players)
+    .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
+
+  let html = '<div class="zone-title">PLAYER STATS</div>';
+  html += '<div class="stats-header"><span class="stats-name-header">Player</span><span class="stats-col-header">On</span><span class="stats-col-header">Sat</span></div>';
+  for (const ps of allPlayers) {
+    const played = _getPlayedTime(ps);
+    const benched = _getBenchWait(ps);
+    html += `
+      <div class="stats-row" data-player-id="${ps.id}">
+        <span class="stats-name">${_esc(ps.name)}</span>
+        <span class="stats-played">${played}</span>
+        <span class="stats-benched">${benched}</span>
+      </div>
+    `;
+  }
+  zone.innerHTML = html;
+}
+
+function _bindFootballGameControls() {
+  const c = _gs.container;
+  c.querySelector('#btn-end-game')?.addEventListener('click', _handleEndGame);
+  c.querySelector('#btn-log-offense')?.addEventListener('click', () => _logPlay('offense'));
+  c.querySelector('#btn-log-defense')?.addEventListener('click', () => _logPlay('defense'));
+  c.querySelector('#btn-share-watch')?.addEventListener('click', _shareWatchLink);
+}
+
+async function _shareWatchLink() {
+  if (!_gs?.game?.id) return;
+  const url = window.location.origin + '/?watch=' + encodeURIComponent(_gs.game.id);
+  const title = 'Watch live — ClearTheBench';
+  const text = 'Live game tracker' + (_gs.team?.name ? ' for ' + _gs.team.name : '');
+
+  if (navigator.share) {
+    try { await navigator.share({ title, text, url }); return; }
+    catch (e) { /* user cancelled — fall through to clipboard */ }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    _showToast('Watch link copied');
+  } catch (e) {
+    _showToast(url);
+  }
+}
+
+// ── SPECTATOR (read-only) ────────────────────────────────────
+
+router_register('watch', async (container, { gameId } = {}) => {
+  // Tear down any prior live state
+  if (_gs) {
+    clearInterval(_gs.timerInterval);
+    if (_gs.visibilityHandler) document.removeEventListener('visibilitychange', _gs.visibilityHandler);
+    if (_gs.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+    _releaseWakeLock();
+    _gs = null;
+  }
+
+  if (!gameId) {
+    container.innerHTML = '<div class="screen"><div class="screen-body"><div class="loading-msg">No game id provided.</div></div></div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="screen">
+      <div class="screen-body">
+        <div class="app-header">
+          <div class="app-logo">Clear<span>The</span>Bench</div>
+        </div>
+        <div class="loading-msg">Loading game...</div>
+      </div>
+    </div>
+  `;
+
+  const game = await db_getGame(gameId);
+  if (!game) {
+    container.innerHTML = `
+      <div class="screen"><div class="screen-body">
+        <div class="app-header"><div class="app-logo">Clear<span>The</span>Bench</div></div>
+        <div class="loading-msg">Game not found. Check the share link.</div>
+      </div></div>
+    `;
+    return;
+  }
+
+  const team = game.ctb_seasons?.ctb_teams || {};
+  const season = game.ctb_seasons || {};
+  const roster = await db_getGameRoster(gameId);
+  const events = await db_getGameEvents(gameId);
+
+  _gs = {
+    game, team, coach: null, season, roster,
+    fieldSize: game.field_size || 4,
+    players: {},
+    timerRunning: false,
+    timerSeconds: 0,
+    timerInterval: null,
+    container,
+    offPlays: 0,
+    defPlays: 0,
+    watchMode: true,
+    realtimeChannel: null,
+    queueChannel: null,
+    queueIn: [],
+    queueOut: [],
+  };
+
+  for (const p of roster) {
+    _gs.players[p.id] = {
+      id: p.id, name: p.name, jerseyNumber: p.jersey_number,
+      onField: false, fieldEnteredAt: null, currentStint: 0,
+      totalOnTime: 0, benchSince: 0, totalBenchTime: 0,
+    };
+  }
+
+  _replayEventsForWatch(events);
+  _renderWatchScreen();
+
+  _gs.realtimeChannel = db_subscribeToGame(gameId, (newEvent) => {
+    if (!_gs || !_gs.watchMode) return;
+    _applyEventForWatch(newEvent);
+    _renderWatchScreen();
+  });
+
+  // Listen for live rotation-queue broadcasts from the head coach
+  try {
+    _gs.queueChannel = _db.channel('ctb_queue_' + gameId)
+      .on('broadcast', { event: 'queue' }, ({ payload }) => {
+        if (!_gs || !_gs.watchMode) return;
+        _gs.queueIn = Array.isArray(payload?.in) ? payload.in : [];
+        _gs.queueOut = Array.isArray(payload?.out) ? payload.out : [];
+        _renderFootballRotationQueue();
+        _renderFootballFieldZone();
+        _renderFootballBenchZone();
+      })
+      .subscribe();
+  } catch (e) { /* ignore — broadcast just won't update */ }
+
+  window.addEventListener('beforeunload', () => {
+    if (_gs?.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+    if (_gs?.queueChannel) db_unsubscribe(_gs.queueChannel);
+  });
+});
+
+function _replayEventsForWatch(events) {
+  for (const evt of events) {
+    _applyEventForWatch(evt);
+  }
+}
+
+function _applyEventForWatch(evt) {
+  const ts = evt.timestamp || 0;
+  if (ts > _gs.timerSeconds) _gs.timerSeconds = ts;
+
+  if (evt.event_type === 'sub_on' && evt.player_id && _gs.players[evt.player_id]) {
+    const ps = _gs.players[evt.player_id];
+    if (!ps.onField) ps.totalBenchTime += Math.max(0, ts - ps.benchSince);
+    ps.onField = true;
+    ps.fieldEnteredAt = ts;
+    ps.currentStint = Math.max(0, _gs.timerSeconds - ts);
+  } else if (evt.event_type === 'sub_off' && evt.player_id && _gs.players[evt.player_id]) {
+    const ps = _gs.players[evt.player_id];
+    if (ps.onField && ps.fieldEnteredAt !== null) {
+      ps.totalOnTime += Math.max(0, ts - ps.fieldEnteredAt);
+    }
+    ps.onField = false;
+    ps.fieldEnteredAt = null;
+    ps.benchSince = ts;
+  } else if (evt.event_type === 'play_logged') {
+    const side = evt.meta?.side;
+    if (side === 'offense') _gs.offPlays++;
+    else if (side === 'defense') _gs.defPlays++;
+    // Update on-field players' currentStint to reflect the new play count
+    for (const ps of Object.values(_gs.players)) {
+      if (ps.onField && ps.fieldEnteredAt !== null) {
+        ps.currentStint = _gs.timerSeconds - ps.fieldEnteredAt;
+      }
+    }
+  }
+}
+
+function _renderWatchScreen() {
+  const c = _gs.container;
+  const isFootball = _isFootball();
+  const opponent = _gs.game.opponent ? ' vs ' + _esc(_gs.game.opponent) : '';
+
+  c.innerHTML = `
+    <div class="screen">
+      <div class="screen-body">
+        <div class="game-header">
+          <div class="app-logo">Clear<span>The</span>Bench</div>
+        </div>
+        <div class="spectator-banner">
+          <span class="spectator-dot"></span>
+          <span>Live &mdash; ${_esc(_gs.team?.name || '')}${opponent}</span>
+        </div>
+        ${isFootball ? `
+        <div class="play-tracker watch">
+          <div class="play-btn play-btn-offense readonly">
+            <span class="play-btn-label">OFFENSE</span>
+            <span class="play-btn-count"><span id="off-play-count">${_gs.offPlays || 0}</span> plays</span>
+          </div>
+          <div class="play-btn play-btn-defense readonly">
+            <span class="play-btn-label">DEFENSE</span>
+            <span class="play-btn-count"><span id="def-play-count">${_gs.defPlays || 0}</span> plays</span>
+          </div>
+        </div>
+        <div class="rotation-queue" id="rotation-queue"></div>
+        ` : ''}
+        <div class="field-zone" id="field-zone"></div>
+        <div class="bench-zone" id="bench-zone"></div>
+      </div>
+    </div>
+  `;
+
+  if (isFootball) {
+    _renderFootballFieldZone();
+    _renderFootballBenchZone();
+    _renderFootballRotationQueue();
+  } else {
+    _renderFieldZone();
+    _renderBenchZone();
+  }
+}
+
+async function _logPlay(side) {
+  // Unlock audio on first user gesture (haptic only on football, but harmless)
+  _ensureAudioContext();
+
+  // Each play increments the play count (using timerSeconds as the counter)
+  // and credits all on-field players currently on the field for that play.
+  _gs.timerSeconds++;
+  if (side === 'offense') _gs.offPlays++;
+  else if (side === 'defense') _gs.defPlays++;
+
+  for (const ps of Object.values(_gs.players)) {
+    if (ps.onField && ps.fieldEnteredAt !== null) {
+      ps.currentStint = _gs.timerSeconds - ps.fieldEnteredAt;
+    }
+  }
+
+  await db_insertEvent({
+    gameId: _gs.game.id,
+    playerId: null,
+    eventType: 'play_logged',
+    timestamp: _gs.timerSeconds,
+    meta: { side },
+  });
+
+  // Update header counters
+  const offEl = _gs.container.querySelector('#off-play-count');
+  const defEl = _gs.container.querySelector('#def-play-count');
+  if (offEl) offEl.textContent = _gs.offPlays;
+  if (defEl) defEl.textContent = _gs.defPlays;
+
+  // Quick haptic feedback on tap
+  try { navigator.vibrate(20); } catch (e) { /* ignore */ }
+
+  _renderFootballFieldZone();
+  _renderFootballBenchZone();
+  _renderFootballRotationQueue();
+  _renderFootballTeamStats();
+  _saveCrashRecovery();
+}
+
+async function _executeQueueRotation() {
+  if (!_gs) return;
+  const pairCount = Math.min(_gs.queueIn.length, _gs.queueOut.length);
+  if (pairCount === 0) return;
+
+  const ts = _gs.timerSeconds;
+  for (let i = 0; i < pairCount; i++) {
+    const inId = _gs.queueIn[i];
+    const outId = _gs.queueOut[i];
+    const inPs = _gs.players[inId];
+    const outPs = _gs.players[outId];
+    if (!inPs || !outPs) continue;
+
+    await db_insertEvent({ gameId: _gs.game.id, playerId: outId, eventType: 'sub_off', timestamp: ts });
+    await db_insertEvent({ gameId: _gs.game.id, playerId: inId, eventType: 'sub_on', timestamp: ts });
+
+    outPs.totalOnTime += Math.max(0, ts - (outPs.fieldEnteredAt || 0));
+    outPs.onField = false;
+    outPs.fieldEnteredAt = null;
+    outPs.currentStint = 0;
+    outPs.benchSince = ts;
+
+    inPs.totalBenchTime += Math.max(0, ts - inPs.benchSince);
+    inPs.onField = true;
+    inPs.fieldEnteredAt = ts;
+    inPs.currentStint = 0;
+  }
+
+  _gs.queueIn = [];
+  _gs.queueOut = [];
+  _broadcastQueue();
+
+  try { navigator.vibrate([30, 40, 30]); } catch (e) { /* ignore */ }
+
+  _renderFootballFieldZone();
+  _renderFootballBenchZone();
+  _renderFootballRotationQueue();
+  _renderFootballTeamStats();
+  _saveCrashRecovery();
 }
 
 // ── GAME SUMMARY SCREEN ──────────────────────────────────────
@@ -1252,6 +1844,9 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
     container.innerHTML = '<div class="screen"><div class="screen-body"><div class="loading-msg">Could not load summary.</div></div></div>';
     return;
   }
+
+  const isFootball = game?.mode === 'play_count';
+  const fmtVal = (v) => isFootball ? (v + ' plays') : _fmt(v);
 
   const opponent = game?.opponent || '';
   const maxTime = summary.players.length > 0
@@ -1287,7 +1882,7 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
         <div class="summary-bar">
           <div class="summary-bar-fill" style="width:${pct}%"></div>
         </div>
-        <div class="summary-player-time">${_fmt(p.totalOnTime)}</div>
+        <div class="summary-player-time">${fmtVal(p.totalOnTime)}</div>
       </div>
     `;
   }).join('');
@@ -1302,7 +1897,7 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
         <div class="summary-header">
           <div class="summary-title">GAME SUMMARY</div>
           ${opponent ? '<div class="summary-sub">vs ' + _esc(opponent) + '</div>' : ''}
-          <div class="summary-sub">Total: ${_fmt(summary.gameDuration)}</div>
+          <div class="summary-sub">Total: ${fmtVal(summary.gameDuration)}</div>
         </div>
 
         <div class="equity-stars">${starsHtml}</div>
@@ -1321,10 +1916,10 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
   container.querySelector('#btn-share')?.addEventListener('click', async () => {
     const lines = ['ClearTheBench Game Summary'];
     if (opponent) lines.push('vs ' + opponent);
-    lines.push('Duration: ' + _fmt(summary.gameDuration));
+    lines.push((isFootball ? 'Total plays: ' : 'Duration: ') + fmtVal(summary.gameDuration));
     lines.push('');
     for (const p of summary.players) {
-      lines.push(p.player.name + ': ' + _fmt(p.totalOnTime));
+      lines.push(p.player.name + ': ' + fmtVal(p.totalOnTime));
     }
     const text = lines.join('\n');
 

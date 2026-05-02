@@ -26,6 +26,14 @@ function router_navigate(name, params = {}) {
 // ── INIT ──────────────────────────────────────────────────────
 
 async function router_init() {
+  // Spectator deep link — skip auth, jump straight to read-only watch view
+  const params = new URLSearchParams(window.location.search);
+  const watchGameId = params.get('watch');
+  if (watchGameId) {
+    router_navigate('watch', { gameId: watchGameId });
+    return;
+  }
+
   const coach = await auth_init();
   router_navigate('home', { coach });
 }
