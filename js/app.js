@@ -217,12 +217,21 @@ function _showMenu(container, coach) {
   const existing = document.getElementById('ctb-menu-overlay');
   if (existing) { existing.remove(); return; }
 
+  const theme = _getTheme();
+  const seg = (val, label) =>
+    `<button class="theme-seg ${theme === val ? 'is-active' : ''}" data-theme="${val}">${label}</button>`;
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.id = 'ctb-menu-overlay';
   overlay.innerHTML = `
     <div class="modal-sheet">
       <div class="modal-title">${_esc(coach.email)}</div>
+      <div class="theme-row" role="group" aria-label="Theme">
+        ${seg('auto', 'Auto')}
+        ${seg('light', '☀ Light')}
+        ${seg('dark', '☾ Dark')}
+      </div>
       <button class="btn-ghost" id="btn-sign-out" style="color:var(--red);width:100%;margin-top:12px;">
         Sign Out
       </button>
@@ -231,12 +240,46 @@ function _showMenu(container, coach) {
   `;
   document.getElementById('app').appendChild(overlay);
 
+  overlay.querySelectorAll('.theme-seg').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _setTheme(btn.dataset.theme);
+      overlay.querySelectorAll('.theme-seg').forEach(b => {
+        b.classList.toggle('is-active', b.dataset.theme === btn.dataset.theme);
+      });
+    });
+  });
+
   overlay.querySelector('#btn-sign-out')?.addEventListener('click', () => {
     overlay.remove();
     auth_signOut();
   });
   overlay.querySelector('#menu-close')?.addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ── THEME ──────────────────────────────────────────────────────
+function _getTheme() {
+  try {
+    const t = localStorage.getItem('ctb_theme');
+    return (t === 'light' || t === 'dark') ? t : 'auto';
+  } catch (_) { return 'auto'; }
+}
+
+function _setTheme(value) {
+  try {
+    if (value === 'auto') {
+      localStorage.removeItem('ctb_theme');
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      localStorage.setItem('ctb_theme', value);
+      document.documentElement.setAttribute('data-theme', value);
+    }
+    const effective = (value === 'auto')
+      ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+      : value;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', effective === 'light' ? '#f5faf3' : '#0d1f0d');
+  } catch (_) {}
 }
 
 // ── SIGN IN SCREEN ────────────────────────────────────────────
