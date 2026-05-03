@@ -1126,6 +1126,102 @@ html, body {
   color: var(--orange);
 }
 
+/* ── FOOTBALL STATS CONSOLE (per-player +/-) ───────────────── */
+
+.ff-stats-row {
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ff-stats-row:last-child {
+  border-bottom: none;
+}
+
+.ff-stats-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ff-stats-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ff-stats-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ff-stats-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.stat-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-height: 38px;
+}
+
+.stat-tile-emoji {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.stat-tile-count {
+  flex: 1;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stat-step {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s, opacity 0.15s;
+}
+
+.stat-step:active:not(:disabled) {
+  transform: scale(0.92);
+  background: var(--card2);
+}
+
+.stat-step:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 /* ── ROTATION COUNTDOWN ────────────────────────────────────── */
 
 .rotation-countdown {
@@ -1820,9 +1916,15 @@ html, body {
   color: var(--text-muted);
 }
 
+.score-bumps {
+  display: flex;
+  gap: 6px;
+}
+
 .score-bump {
+  min-width: 36px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.4px;
   color: var(--text);
@@ -1831,12 +1933,17 @@ html, body {
   border-radius: 999px;
   padding: 4px 10px;
   cursor: pointer;
-  transition: transform 0.08s, background 0.15s;
+  transition: transform 0.08s, background 0.15s, opacity 0.15s;
 }
 
-.score-bump:active {
+.score-bump:active:not(:disabled) {
   transform: scale(0.94);
   background: var(--card2);
+}
+
+.score-bump:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ── POSSESSION SWITCH ──────────────────────────────────────── */
@@ -1929,57 +2036,6 @@ html, body {
   letter-spacing: 0.5px;
 }
 
-.attr-hint {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--text);
-  text-align: center;
-  margin-bottom: 8px;
-  letter-spacing: 0.3px;
-}
-
-.attr-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.attr-cancel {
-  flex: 0 0 auto;
-  padding: 12px 18px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-  color: var(--text-muted);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  transition: transform 0.08s, background 0.15s;
-}
-
-.attr-cancel:active {
-  transform: scale(0.97);
-  background: var(--card2);
-}
-
-.attr-done {
-  flex: 1;
-  padding: 12px;
-  border: none;
-  border-radius: var(--radius);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  transition: transform 0.08s, filter 0.15s;
-}
-
-.attr-done:active {
-  transform: scale(0.97);
-  filter: brightness(0.92);
-}
 
 /* ── FOOTBALL FIELD/BENCH GRID ─────────────────────────────── */
 
@@ -2080,33 +2136,6 @@ html, body {
 .ff-stat-extra {
   color: var(--text-muted);
   font-weight: 600;
-}
-
-/* During attribution: dim non-target cells, highlight selectable ones */
-
-.ff-cell.attr-mode.attr-offense {
-  border-color: var(--lime);
-  background: color-mix(in srgb, var(--lime) 6%, var(--card));
-}
-
-.ff-cell.attr-mode.attr-defense {
-  border-color: var(--blue);
-  background: color-mix(in srgb, var(--blue) 8%, var(--card));
-}
-
-.ff-cell.puller-selected {
-  border-color: var(--blue);
-  background: color-mix(in srgb, var(--blue) 22%, var(--card));
-}
-
-.ff-cell.puller-selected .ff-hint.hint-pull {
-  color: #001b2e;
-  background: var(--blue);
-}
-
-.ff-cell.attr-disabled {
-  opacity: 0.5;
-  pointer-events: none;
 }
 
 /* ── HEADER ACTIONS (multi-button) ─────────────────────────── */
