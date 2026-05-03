@@ -424,12 +424,10 @@ router_register('game', async (container, params) => {
     queueOut: [],
     queueChannel: null,
     possession: 'offense',
-    attributionMode: null,        // null | 'offense' | 'defense'
-    pendingPullers: [],           // playerIds toggled during defense attribution
     score: { us: 0, opp: 0 },
     carries: {},                  // playerId -> count
     pulls: {},                    // playerId -> count
-    lastCarrierId: null,
+    tds: {},                      // playerId -> count
   };
 
   // Initialize all players as bench with zeroed stats
@@ -484,14 +482,19 @@ router_register('game', async (container, params) => {
       if (side === 'offense') _gs.offPlays++;
       else if (side === 'defense') _gs.defPlays++;
     } else if (evt.event_type === 'carry' && evt.player_id) {
-      _gs.carries[evt.player_id] = (_gs.carries[evt.player_id] || 0) + 1;
-      _gs.lastCarrierId = evt.player_id;
+      const d = evt.meta?.delta ?? 1;
+      _gs.carries[evt.player_id] = Math.max(0, (_gs.carries[evt.player_id] || 0) + d);
     } else if (evt.event_type === 'flag_pull' && evt.player_id) {
-      _gs.pulls[evt.player_id] = (_gs.pulls[evt.player_id] || 0) + 1;
+      const d = evt.meta?.delta ?? 1;
+      _gs.pulls[evt.player_id] = Math.max(0, (_gs.pulls[evt.player_id] || 0) + d);
     } else if (evt.event_type === 'score') {
       const team = evt.meta?.team;
-      if (team === 'us') _gs.score.us++;
-      else if (team === 'opp') _gs.score.opp++;
+      const d = evt.meta?.delta ?? 1;
+      if (team === 'us') _gs.score.us = Math.max(0, _gs.score.us + d);
+      else if (team === 'opp') _gs.score.opp = Math.max(0, _gs.score.opp + d);
+      if (evt.player_id && team === 'us') {
+        _gs.tds[evt.player_id] = Math.max(0, (_gs.tds[evt.player_id] || 0) + d);
+      }
     }
   }
 
@@ -954,8 +957,6 @@ function _checkRotationAlert() {
 
 function _handleBenchPlayerTap(playerId) {
   if (_isFootball()) {
-    // Attribution must come from on-field players, not the bench
-    if (_gs.attributionMode) return;
     // Football: toggle player in the "going in" rotation queue
     const idx = _gs.queueIn.indexOf(playerId);
     if (idx >= 0) _gs.queueIn.splice(idx, 1);
@@ -975,21 +976,6 @@ function _handleBenchPlayerTap(playerId) {
 
 async function _handleFieldPlayerTap(fieldPlayerId) {
   if (_isFootball()) {
-    // Attribution mode: tap routes to carrier/puller selection
-    if (_gs.attributionMode === 'offense') {
-      // Single carrier — tap auto-commits the play
-      _gs.pendingCarrierId = fieldPlayerId;
-      await _commitAttribution();
-      return;
-    }
-    if (_gs.attributionMode === 'defense') {
-      const idx = _gs.pendingPullers.indexOf(fieldPlayerId);
-      if (idx >= 0) _gs.pendingPullers.splice(idx, 1);
-      else _gs.pendingPullers.push(fieldPlayerId);
-      _renderFootballPlayAction();
-      _renderFootballFieldZone();
-      return;
-    }
     // Football: toggle player in the "going out" rotation queue
     const idx = _gs.queueOut.indexOf(fieldPlayerId);
     if (idx >= 0) _gs.queueOut.splice(idx, 1);
@@ -1366,17 +1352,26 @@ function _renderFootballScoreboard() {
     <div class="score-side score-us">
       <div class="score-label">${teamName}</div>
       <div class="score-value">${us}</div>
-      <button class="score-bump" id="btn-score-us">+1</button>
+      <div class="score-bumps">
+        <button class="score-bump" data-team="us" data-delta="-1" ${us <= 0 ? 'disabled' : ''}>−1</button>
+        <button class="score-bump" data-team="us" data-delta="1">+1</button>
+      </div>
     </div>
     <div class="score-divider">—</div>
     <div class="score-side score-opp">
       <div class="score-label">${oppName}</div>
       <div class="score-value">${opp}</div>
-      <button class="score-bump" id="btn-score-opp">+1</button>
+      <div class="score-bumps">
+        <button class="score-bump" data-team="opp" data-delta="-1" ${opp <= 0 ? 'disabled' : ''}>−1</button>
+        <button class="score-bump" data-team="opp" data-delta="1">+1</button>
+      </div>
     </div>
   `;
-  zone.querySelector('#btn-score-us')?.addEventListener('click', () => _logScore('us'));
-  zone.querySelector('#btn-score-opp')?.addEventListener('click', () => _logScore('opp'));
+  zone.querySelectorAll('.score-bump').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _adjustScore(btn.dataset.team, parseInt(btn.dataset.delta, 10));
+    });
+  });
 }
 
 function _renderFootballPossession() {
@@ -1403,84 +1398,28 @@ function _renderFootballPossession() {
 function _renderFootballPlayAction() {
   const zone = _gs.container?.querySelector('#play-action');
   if (!zone) return;
-  const mode = _gs.attributionMode;
   const side = _gs.possession || 'offense';
   const sideClass = side === 'offense' ? 'play-btn-offense' : 'play-btn-defense';
-
-  if (!mode) {
-    zone.innerHTML = `
-      <button class="play-btn ${sideClass}" id="btn-log-play">
-        <span class="play-btn-label">+1 PLAY</span>
-      </button>
-    `;
-    zone.querySelector('#btn-log-play')?.addEventListener('click', _enterAttribution);
-    return;
-  }
-
-  // Attribution mode UI
-  const isDefense = mode === 'defense';
-  const pulls = _gs.pendingPullers?.length || 0;
-  const hint = isDefense
-    ? `Tap defenders who pulled the flag${pulls ? ' · ' + pulls + ' selected' : ''}`
-    : 'Tap who carried the ball';
   zone.innerHTML = `
-    <div class="attr-hint">${hint}</div>
-    <div class="attr-actions">
-      <button class="attr-cancel" id="btn-attr-cancel">CANCEL</button>
-      <button class="attr-done ${sideClass}" id="btn-attr-done">${isDefense && pulls ? 'DONE · ' + pulls : 'DONE'}</button>
-    </div>
+    <button class="play-btn ${sideClass}" id="btn-log-play">
+      <span class="play-btn-label">+1 PLAY</span>
+    </button>
   `;
-  zone.querySelector('#btn-attr-cancel')?.addEventListener('click', _exitAttribution);
-  zone.querySelector('#btn-attr-done')?.addEventListener('click', _commitAttribution);
+  zone.querySelector('#btn-log-play')?.addEventListener('click', _logFootballPlay);
 }
 
 function _setPossession(side) {
   if (side !== 'offense' && side !== 'defense') return;
   if (_gs.possession === side) return;
-  // Switching mid-attribution would be confusing — cancel pending state first
-  if (_gs.attributionMode) {
-    _gs.attributionMode = null;
-    _gs.pendingPullers = [];
-  }
   _gs.possession = side;
   _renderFootballPossession();
   _renderFootballPlayAction();
-  _renderFootballFieldZone();
 }
 
-function _enterAttribution() {
-  // Don't allow attribution during a pending swap queue — would confuse field taps
-  if ((_gs.queueIn?.length || 0) > 0 || (_gs.queueOut?.length || 0) > 0) {
-    _showToast('Clear or rotate the queue first');
-    return;
-  }
-  _gs.attributionMode = _gs.possession || 'offense';
-  _gs.pendingPullers = [];
-  _renderFootballPlayAction();
-  _renderFootballFieldZone();
-}
-
-function _exitAttribution() {
-  _gs.attributionMode = null;
-  _gs.pendingPullers = [];
-  _renderFootballPlayAction();
-  _renderFootballFieldZone();
-}
-
-async function _commitAttribution() {
-  const mode = _gs.attributionMode;
-  if (!mode) return;
-  const carrierId = mode === 'offense' ? _gs.pendingCarrierId || null : null;
-  const pullerIds = mode === 'defense' ? (_gs.pendingPullers || []).slice() : [];
-  _gs.attributionMode = null;
-  _gs.pendingCarrierId = null;
-  _gs.pendingPullers = [];
-  await _logFootballPlay(mode, { carrierId, pullerIds });
-}
-
-async function _logFootballPlay(side, { carrierId, pullerIds } = {}) {
+async function _logFootballPlay() {
   _ensureAudioContext();
 
+  const side = _gs.possession || 'offense';
   _gs.timerSeconds++;
   if (side === 'offense') _gs.offPlays++;
   else if (side === 'defense') _gs.defPlays++;
@@ -1491,64 +1430,81 @@ async function _logFootballPlay(side, { carrierId, pullerIds } = {}) {
     }
   }
 
-  const ts = _gs.timerSeconds;
   await db_insertEvent({
     gameId: _gs.game.id,
     playerId: null,
     eventType: 'play_logged',
-    timestamp: ts,
+    timestamp: _gs.timerSeconds,
     meta: { side },
   });
 
-  if (carrierId) {
-    await db_insertEvent({
-      gameId: _gs.game.id,
-      playerId: carrierId,
-      eventType: 'carry',
-      timestamp: ts,
-    });
-    _gs.carries[carrierId] = (_gs.carries[carrierId] || 0) + 1;
-    _gs.lastCarrierId = carrierId;
-  }
-
-  for (const pid of (pullerIds || [])) {
-    await db_insertEvent({
-      gameId: _gs.game.id,
-      playerId: pid,
-      eventType: 'flag_pull',
-      timestamp: ts,
-    });
-    _gs.pulls[pid] = (_gs.pulls[pid] || 0) + 1;
-  }
-
   try { navigator.vibrate(20); } catch (e) { /* ignore */ }
 
-  _renderFootballScoreboard();
   _renderFootballPossession();
-  _renderFootballPlayAction();
   _renderFootballFieldZone();
   _renderFootballBenchZone();
   _renderFootballTeamStats();
   _saveCrashRecovery();
 }
 
-async function _logScore(team) {
-  if (team !== 'us' && team !== 'opp') return;
-  const scorerId = team === 'us' ? _gs.lastCarrierId : null;
-  const ts = _gs.timerSeconds;
+async function _adjustPlayerStat(playerId, stat, delta) {
+  if (!_gs?.game?.id || !playerId || (delta !== 1 && delta !== -1)) return;
+  const eventType = stat === 'td' ? 'score' : stat;     // 'carry' | 'flag_pull' | 'score' (TD)
+  const meta = stat === 'td' ? { team: 'us', delta } : { delta };
+
+  if (stat === 'carry') {
+    const cur = _gs.carries[playerId] || 0;
+    if (delta < 0 && cur <= 0) return;
+    _gs.carries[playerId] = Math.max(0, cur + delta);
+  } else if (stat === 'flag_pull') {
+    const cur = _gs.pulls[playerId] || 0;
+    if (delta < 0 && cur <= 0) return;
+    _gs.pulls[playerId] = Math.max(0, cur + delta);
+  } else if (stat === 'td') {
+    const cur = _gs.tds[playerId] || 0;
+    if (delta < 0 && cur <= 0) return;
+    _gs.tds[playerId] = Math.max(0, cur + delta);
+    _gs.score.us = Math.max(0, _gs.score.us + delta);
+  } else {
+    return;
+  }
+
   await db_insertEvent({
     gameId: _gs.game.id,
-    playerId: scorerId,
-    eventType: 'score',
-    timestamp: ts,
-    meta: { team },
+    playerId,
+    eventType,
+    timestamp: _gs.timerSeconds,
+    meta,
   });
-  _gs.score[team]++;
+
+  try { navigator.vibrate(15); } catch (e) { /* ignore */ }
+
+  if (stat === 'td') _renderFootballScoreboard();
+  _renderFootballFieldZone();
+  _renderFootballBenchZone();
+  _renderFootballTeamStats();
+  _saveCrashRecovery();
+}
+
+async function _adjustScore(team, delta) {
+  if (team !== 'us' && team !== 'opp') return;
+  if (delta !== 1 && delta !== -1) return;
+  const cur = _gs.score[team] || 0;
+  if (delta < 0 && cur <= 0) return;
+
+  _gs.score[team] = Math.max(0, cur + delta);
+
+  await db_insertEvent({
+    gameId: _gs.game.id,
+    playerId: null,
+    eventType: 'score',
+    timestamp: _gs.timerSeconds,
+    meta: { team, delta },
+  });
+
+  try { navigator.vibrate(15); } catch (e) { /* ignore */ }
+
   _renderFootballScoreboard();
-  if (team === 'us' && scorerId && _gs.players[scorerId]) {
-    _showToast(_gs.players[scorerId].name + ' scored');
-  }
-  try { navigator.vibrate([20, 30, 20]); } catch (e) { /* ignore */ }
 }
 
 function _setupQueueChannel() {
@@ -1653,9 +1609,6 @@ function _renderFootballFieldZone() {
     if (_getPlayedTime(ps) > 0) { nextOutId = ps.id; break; }
   }
 
-  const attrMode = _gs.attributionMode || null;
-  const pullerSet = new Set(_gs.pendingPullers || []);
-
   let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
   html += '<div class="ff-grid">';
   for (const ps of fieldPlayers) {
@@ -1664,18 +1617,14 @@ function _renderFootballFieldZone() {
     const carries = _gs.carries?.[ps.id] || 0;
     const pulls = _gs.pulls?.[ps.id] || 0;
     const isQueued = queueOutSet.has(ps.id);
-    const isSuggestedOut = !isQueued && !attrMode && ps.id === nextOutId;
-    const isPullerSelected = attrMode === 'defense' && pullerSet.has(ps.id);
+    const isSuggestedOut = !isQueued && ps.id === nextOutId;
 
     let cls = 'ff-cell field';
-    if (attrMode) cls += ' attr-mode attr-' + attrMode;
-    if (isPullerSelected) cls += ' puller-selected';
-    if (!attrMode && isQueued) cls += ' queued-out';
+    if (isQueued) cls += ' queued-out';
     else if (isSuggestedOut) cls += ' suggest-out';
 
     let hint = '';
-    if (isPullerSelected) hint = '<span class="ff-hint hint-pull">🚩 pulled</span>';
-    else if (!attrMode && isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
+    if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
     else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
 
     const extraStats = (carries || pulls)
@@ -1719,7 +1668,6 @@ function _renderFootballBenchZone() {
     if (_getBenchWait(ps) > 0) { nextInId = ps.id; break; }
   }
 
-  const attrMode = _gs.attributionMode || null;
   const addBtn = _gs.watchMode ? '' : '<button class="zone-action" id="btn-add-player">+ ADD</button>';
 
   let html = '<div class="zone-title-row"><div class="zone-title">BENCH (' + count + ')</div>' + addBtn + '</div>';
@@ -1731,13 +1679,12 @@ function _renderFootballBenchZone() {
     const carries = _gs.carries?.[ps.id] || 0;
     const pulls = _gs.pulls?.[ps.id] || 0;
     const isQueued = queueInSet.has(ps.id);
-    const isSuggestedIn = !isQueued && !attrMode && ps.id === nextInId;
+    const isSuggestedIn = !isQueued && ps.id === nextInId;
     let cls = 'ff-cell bench';
-    if (attrMode) cls += ' attr-disabled';
-    if (!attrMode && isQueued) cls += ' queued-in';
+    if (isQueued) cls += ' queued-in';
     else if (isSuggestedIn) cls += ' suggest-in';
     let hint = '';
-    if (!attrMode && isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
+    if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
     else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
     const extraStats = (carries || pulls)
       ? `<span class="ff-stat-extra">${carries ? ' · 🏈' + carries : ''}${pulls ? ' · 🚩' + pulls : ''}</span>`
@@ -1864,23 +1811,58 @@ function _renderFootballTeamStats() {
   const zone = _gs.container.querySelector('#team-stats');
   if (!zone) return;
 
+  const readonly = !!_gs.watchMode;
   const allPlayers = Object.values(_gs.players)
     .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
 
+  const tile = (stat, emoji, count) => {
+    const minusDisabled = count <= 0 ? 'disabled' : '';
+    const minus = readonly ? '' : `<button class="stat-step" data-stat="${stat}" data-delta="-1" ${minusDisabled}>−</button>`;
+    const plus  = readonly ? '' : `<button class="stat-step" data-stat="${stat}" data-delta="1">+</button>`;
+    return `
+      <div class="stat-tile">
+        ${minus}
+        <span class="stat-tile-emoji">${emoji}</span>
+        <span class="stat-tile-count">${count}</span>
+        ${plus}
+      </div>
+    `;
+  };
+
   let html = '<div class="zone-title">PLAYER STATS</div>';
-  html += '<div class="stats-header"><span class="stats-name-header">Player</span><span class="stats-col-header">On</span><span class="stats-col-header">Sat</span></div>';
   for (const ps of allPlayers) {
     const played = _getPlayedTime(ps);
     const benched = _getBenchWait(ps);
+    const carries = _gs.carries?.[ps.id] || 0;
+    const pulls = _gs.pulls?.[ps.id] || 0;
+    const tds = _gs.tds?.[ps.id] || 0;
     html += `
-      <div class="stats-row" data-player-id="${ps.id}">
-        <span class="stats-name">${_esc(ps.name)}</span>
-        <span class="stats-played">${played}</span>
-        <span class="stats-benched">${benched}</span>
+      <div class="ff-stats-row" data-player-id="${ps.id}">
+        <div class="ff-stats-head">
+          <span class="ff-stats-name">${_esc(ps.name)}</span>
+          <span class="ff-stats-time"><span class="ff-stat-on">${played}P</span> · <span class="ff-stat-off">${benched}S</span></span>
+        </div>
+        <div class="ff-stats-tiles">
+          ${tile('carry', '🏈', carries)}
+          ${tile('flag_pull', '🚩', pulls)}
+          ${tile('td', '🏆', tds)}
+        </div>
       </div>
     `;
   }
   zone.innerHTML = html;
+
+  if (!readonly) {
+    zone.querySelectorAll('.ff-stats-row').forEach(row => {
+      const playerId = row.dataset.playerId;
+      row.querySelectorAll('.stat-step').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          _adjustPlayerStat(playerId, btn.dataset.stat, parseInt(btn.dataset.delta, 10));
+        });
+      });
+    });
+  }
 }
 
 function _bindFootballGameControls() {
@@ -1974,7 +1956,7 @@ router_register('watch', async (container, { gameId } = {}) => {
     score: { us: 0, opp: 0 },
     carries: {},
     pulls: {},
-    lastCarrierId: null,
+    tds: {},
   };
 
   for (const p of roster) {
@@ -2049,14 +2031,19 @@ function _applyEventForWatch(evt) {
       }
     }
   } else if (evt.event_type === 'carry' && evt.player_id) {
-    _gs.carries[evt.player_id] = (_gs.carries[evt.player_id] || 0) + 1;
-    _gs.lastCarrierId = evt.player_id;
+    const d = evt.meta?.delta ?? 1;
+    _gs.carries[evt.player_id] = Math.max(0, (_gs.carries[evt.player_id] || 0) + d);
   } else if (evt.event_type === 'flag_pull' && evt.player_id) {
-    _gs.pulls[evt.player_id] = (_gs.pulls[evt.player_id] || 0) + 1;
+    const d = evt.meta?.delta ?? 1;
+    _gs.pulls[evt.player_id] = Math.max(0, (_gs.pulls[evt.player_id] || 0) + d);
   } else if (evt.event_type === 'score') {
     const team = evt.meta?.team;
-    if (team === 'us') _gs.score.us++;
-    else if (team === 'opp') _gs.score.opp++;
+    const d = evt.meta?.delta ?? 1;
+    if (team === 'us') _gs.score.us = Math.max(0, _gs.score.us + d);
+    else if (team === 'opp') _gs.score.opp = Math.max(0, _gs.score.opp + d);
+    if (evt.player_id && team === 'us') {
+      _gs.tds[evt.player_id] = Math.max(0, (_gs.tds[evt.player_id] || 0) + d);
+    }
   }
 }
 
@@ -2093,6 +2080,7 @@ function _renderWatchScreen() {
         ${isFootball ? '<div class="rotation-queue" id="rotation-queue"></div>' : ''}
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
+        ${isFootball ? '<div class="team-stats" id="team-stats"></div>' : ''}
       </div>
     </div>
   `;
@@ -2101,6 +2089,7 @@ function _renderWatchScreen() {
     _renderFootballFieldZone();
     _renderFootballBenchZone();
     _renderFootballRotationQueue();
+    _renderFootballTeamStats();
   } else {
     _renderFieldZone();
     _renderBenchZone();
