@@ -1632,12 +1632,12 @@ function _renderFootballFieldZone() {
     if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
     else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
 
-    let actions = '';
+    let badges = '';
     if (editable) {
-      actions = '<div class="ff-cell-actions">'
+      badges = '<div class="ff-cell-badges">'
         + (possession === 'offense'
-            ? _statTileHtml(ps.id, 'carry', '🏈', carries) + _statTileHtml(ps.id, 'td', '🏆', tds)
-            : _statTileHtml(ps.id, 'flag_pull', '🚩', pulls))
+            ? _statBadgeHtml(ps.id, 'carry', '🏈', carries) + _statBadgeHtml(ps.id, 'td', '🏆', tds)
+            : _statBadgeHtml(ps.id, 'flag_pull', '🚩', pulls))
         + '</div>';
     }
 
@@ -1648,9 +1648,13 @@ function _renderFootballFieldZone() {
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
         ${hint}
-        <div class="ff-name">${_esc(ps.name)}</div>
-        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span>${extraStats}</div>
-        ${actions}
+        <div class="ff-cell-body">
+          <div class="ff-cell-info">
+            <div class="ff-name">${_esc(ps.name)}</div>
+            <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span>${extraStats}</div>
+          </div>
+          ${badges}
+        </div>
       </div>
     `;
   }
@@ -1663,33 +1667,31 @@ function _renderFootballFieldZone() {
         _handleFieldPlayerTap(cell.dataset.playerId);
       });
     });
-    _bindStatStepButtons(zone);
+    zone.querySelectorAll('.stat-badge').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _bumpPlayerStat(btn.dataset.playerId, btn.dataset.stat);
+      });
+    });
   }
 }
 
-function _statTileHtml(playerId, stat, emoji, count) {
-  const minusDisabled = count <= 0 ? 'disabled' : '';
+function _statBadgeHtml(playerId, stat, emoji, count) {
   return `
-    <div class="stat-tile">
-      <button class="stat-step" data-player-id="${playerId}" data-stat="${stat}" data-delta="-1" ${minusDisabled}>−</button>
-      <span class="stat-tile-emoji">${emoji}</span>
-      <span class="stat-tile-count">${count}</span>
-      <button class="stat-step" data-player-id="${playerId}" data-stat="${stat}" data-delta="1">+</button>
-    </div>
+    <button class="stat-badge" data-player-id="${playerId}" data-stat="${stat}">
+      <span class="stat-badge-emoji">${emoji}</span>
+      <span class="stat-badge-count">${count}</span>
+    </button>
   `;
 }
 
-function _bindStatStepButtons(rootEl) {
-  // Swallow taps anywhere inside a stat tile so the parent cell click
-  // (queue-out toggle) doesn't fire when adjusting stats
-  rootEl.querySelectorAll('.stat-tile').forEach(tile => {
-    tile.addEventListener('click', (e) => e.stopPropagation());
-  });
-  rootEl.querySelectorAll('.stat-step').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      _adjustPlayerStat(btn.dataset.playerId, btn.dataset.stat, parseInt(btn.dataset.delta, 10));
-    });
+async function _bumpPlayerStat(playerId, stat) {
+  const player = _gs.players[playerId];
+  if (!player) return;
+  await _adjustPlayerStat(playerId, stat, 1);
+  const emoji = stat === 'carry' ? '🏈' : stat === 'flag_pull' ? '🚩' : '🏆';
+  _showUndoToast(player.name + ' +' + emoji, () => {
+    _adjustPlayerStat(playerId, stat, -1);
   });
 }
 
