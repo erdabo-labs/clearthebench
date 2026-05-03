@@ -1126,61 +1126,29 @@ html, body {
   color: var(--orange);
 }
 
-/* ── FOOTBALL STATS CONSOLE (per-player +/-) ───────────────── */
+/* ── IN-CELL STAT TILES (on-field, possession-contextual) ── */
 
-.ff-stats-row {
-  padding: 10px 4px;
-  border-bottom: 1px solid var(--border);
-}
-
-.ff-stats-row:last-child {
-  border-bottom: none;
-}
-
-.ff-stats-head {
+.ff-cell-actions {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.ff-stats-name {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ff-stats-time {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.ff-stats-tiles {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
   gap: 6px;
+  margin-top: 6px;
 }
 
 .stat-tile {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  padding: 4px 6px;
+  gap: 2px;
+  padding: 3px 4px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  min-height: 38px;
+  min-height: 30px;
 }
 
 .stat-tile-emoji {
-  font-size: 14px;
+  font-size: 13px;
   flex-shrink: 0;
 }
 
@@ -1188,14 +1156,14 @@ html, body {
   flex: 1;
   text-align: center;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
 }
 
 .stat-step {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -1220,6 +1188,68 @@ html, body {
 .stat-step:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+/* ── COMPACT PLAYER STATS TABLE (bottom summary) ─────────── */
+
+.ff-stats-table {
+  display: grid;
+  grid-template-columns: 1fr 56px 36px 36px 36px;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 8px;
+}
+
+.ff-stats-th {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  text-align: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ff-stats-th-name {
+  text-align: left;
+}
+
+.ff-stats-td {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+
+.ff-stats-td-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ff-stats-td-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.ff-on-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lime);
+  flex-shrink: 0;
 }
 
 /* ── ROTATION COUNTDOWN ────────────────────────────────────── */

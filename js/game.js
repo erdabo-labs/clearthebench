@@ -1414,6 +1414,7 @@ function _setPossession(side) {
   _gs.possession = side;
   _renderFootballPossession();
   _renderFootballPlayAction();
+  _renderFootballFieldZone();
 }
 
 async function _logFootballPlay() {
@@ -1609,6 +1610,9 @@ function _renderFootballFieldZone() {
     if (_getPlayedTime(ps) > 0) { nextOutId = ps.id; break; }
   }
 
+  const editable = !_gs.watchMode;
+  const possession = _gs.possession || 'offense';
+
   let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
   html += '<div class="ff-grid">';
   for (const ps of fieldPlayers) {
@@ -1616,6 +1620,7 @@ function _renderFootballFieldZone() {
     const sat = _getBenchWait(ps);
     const carries = _gs.carries?.[ps.id] || 0;
     const pulls = _gs.pulls?.[ps.id] || 0;
+    const tds = _gs.tds?.[ps.id] || 0;
     const isQueued = queueOutSet.has(ps.id);
     const isSuggestedOut = !isQueued && ps.id === nextOutId;
 
@@ -1627,8 +1632,17 @@ function _renderFootballFieldZone() {
     if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
     else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
 
-    const extraStats = (carries || pulls)
-      ? `<span class="ff-stat-extra">${carries ? ' · 🏈' + carries : ''}${pulls ? ' · 🚩' + pulls : ''}</span>`
+    let actions = '';
+    if (editable) {
+      actions = '<div class="ff-cell-actions">'
+        + (possession === 'offense'
+            ? _statTileHtml(ps.id, 'carry', '🏈', carries) + _statTileHtml(ps.id, 'td', '🏆', tds)
+            : _statTileHtml(ps.id, 'flag_pull', '🚩', pulls))
+        + '</div>';
+    }
+
+    const extraStats = !editable && (carries || pulls || tds)
+      ? `<span class="ff-stat-extra">${carries ? ' · 🏈' + carries : ''}${pulls ? ' · 🚩' + pulls : ''}${tds ? ' · 🏆' + tds : ''}</span>`
       : '';
 
     html += `
@@ -1636,19 +1650,47 @@ function _renderFootballFieldZone() {
         ${hint}
         <div class="ff-name">${_esc(ps.name)}</div>
         <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span>${extraStats}</div>
+        ${actions}
       </div>
     `;
   }
   html += '</div>';
   zone.innerHTML = html;
 
-  if (!_gs.watchMode) {
+  if (editable) {
     zone.querySelectorAll('.ff-cell').forEach(cell => {
       cell.addEventListener('click', () => {
         _handleFieldPlayerTap(cell.dataset.playerId);
       });
     });
+    _bindStatStepButtons(zone);
   }
+}
+
+function _statTileHtml(playerId, stat, emoji, count) {
+  const minusDisabled = count <= 0 ? 'disabled' : '';
+  return `
+    <div class="stat-tile">
+      <button class="stat-step" data-player-id="${playerId}" data-stat="${stat}" data-delta="-1" ${minusDisabled}>−</button>
+      <span class="stat-tile-emoji">${emoji}</span>
+      <span class="stat-tile-count">${count}</span>
+      <button class="stat-step" data-player-id="${playerId}" data-stat="${stat}" data-delta="1">+</button>
+    </div>
+  `;
+}
+
+function _bindStatStepButtons(rootEl) {
+  // Swallow taps anywhere inside a stat tile so the parent cell click
+  // (queue-out toggle) doesn't fire when adjusting stats
+  rootEl.querySelectorAll('.stat-tile').forEach(tile => {
+    tile.addEventListener('click', (e) => e.stopPropagation());
+  });
+  rootEl.querySelectorAll('.stat-step').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _adjustPlayerStat(btn.dataset.playerId, btn.dataset.stat, parseInt(btn.dataset.delta, 10));
+    });
+  });
 }
 
 function _renderFootballBenchZone() {
@@ -1678,6 +1720,7 @@ function _renderFootballBenchZone() {
     const played = _getPlayedTime(ps);
     const carries = _gs.carries?.[ps.id] || 0;
     const pulls = _gs.pulls?.[ps.id] || 0;
+    const tds = _gs.tds?.[ps.id] || 0;
     const isQueued = queueInSet.has(ps.id);
     const isSuggestedIn = !isQueued && ps.id === nextInId;
     let cls = 'ff-cell bench';
@@ -1686,8 +1729,8 @@ function _renderFootballBenchZone() {
     let hint = '';
     if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
     else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
-    const extraStats = (carries || pulls)
-      ? `<span class="ff-stat-extra">${carries ? ' · 🏈' + carries : ''}${pulls ? ' · 🚩' + pulls : ''}</span>`
+    const extraStats = (carries || pulls || tds)
+      ? `<span class="ff-stat-extra">${carries ? ' · 🏈' + carries : ''}${pulls ? ' · 🚩' + pulls : ''}${tds ? ' · 🏆' + tds : ''}</span>`
       : '';
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
@@ -1811,58 +1854,35 @@ function _renderFootballTeamStats() {
   const zone = _gs.container.querySelector('#team-stats');
   if (!zone) return;
 
-  const readonly = !!_gs.watchMode;
   const allPlayers = Object.values(_gs.players)
     .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
 
-  const tile = (stat, emoji, count) => {
-    const minusDisabled = count <= 0 ? 'disabled' : '';
-    const minus = readonly ? '' : `<button class="stat-step" data-stat="${stat}" data-delta="-1" ${minusDisabled}>−</button>`;
-    const plus  = readonly ? '' : `<button class="stat-step" data-stat="${stat}" data-delta="1">+</button>`;
-    return `
-      <div class="stat-tile">
-        ${minus}
-        <span class="stat-tile-emoji">${emoji}</span>
-        <span class="stat-tile-count">${count}</span>
-        ${plus}
-      </div>
-    `;
-  };
-
   let html = '<div class="zone-title">PLAYER STATS</div>';
+  html += `
+    <div class="ff-stats-table">
+      <div class="ff-stats-th ff-stats-th-name">Player</div>
+      <div class="ff-stats-th">P/S</div>
+      <div class="ff-stats-th">🏈</div>
+      <div class="ff-stats-th">🚩</div>
+      <div class="ff-stats-th">🏆</div>
+  `;
   for (const ps of allPlayers) {
     const played = _getPlayedTime(ps);
     const benched = _getBenchWait(ps);
     const carries = _gs.carries?.[ps.id] || 0;
     const pulls = _gs.pulls?.[ps.id] || 0;
     const tds = _gs.tds?.[ps.id] || 0;
+    const dot = ps.onField ? '<span class="ff-on-dot" title="on field"></span>' : '';
     html += `
-      <div class="ff-stats-row" data-player-id="${ps.id}">
-        <div class="ff-stats-head">
-          <span class="ff-stats-name">${_esc(ps.name)}</span>
-          <span class="ff-stats-time"><span class="ff-stat-on">${played}P</span> · <span class="ff-stat-off">${benched}S</span></span>
-        </div>
-        <div class="ff-stats-tiles">
-          ${tile('carry', '🏈', carries)}
-          ${tile('flag_pull', '🚩', pulls)}
-          ${tile('td', '🏆', tds)}
-        </div>
-      </div>
+      <div class="ff-stats-td-name">${dot}${_esc(ps.name)}</div>
+      <div class="ff-stats-td-time"><span class="ff-stat-on">${played}</span>/<span class="ff-stat-off">${benched}</span></div>
+      <div class="ff-stats-td">${carries}</div>
+      <div class="ff-stats-td">${pulls}</div>
+      <div class="ff-stats-td">${tds}</div>
     `;
   }
+  html += '</div>';
   zone.innerHTML = html;
-
-  if (!readonly) {
-    zone.querySelectorAll('.ff-stats-row').forEach(row => {
-      const playerId = row.dataset.playerId;
-      row.querySelectorAll('.stat-step').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          _adjustPlayerStat(playerId, btn.dataset.stat, parseInt(btn.dataset.delta, 10));
-        });
-      });
-    });
-  }
 }
 
 function _bindFootballGameControls() {
