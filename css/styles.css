@@ -1126,66 +1126,64 @@ html, body {
   color: var(--orange);
 }
 
-/* ── IN-CELL STAT TILES (on-field, possession-contextual) ── */
+/* ── IN-CELL STAT BADGES (tap = +1, undo via toast) ────────── */
 
-.ff-cell-actions {
+.ff-cell-body {
   display: flex;
-  gap: 8px;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--border);
-}
-
-.stat-tile {
-  flex: 1;
-  display: flex;
+  flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-}
-
-.stat-tile-emoji {
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.stat-tile-count {
+  gap: 8px;
   flex: 1;
-  text-align: center;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
+  min-width: 0;
 }
 
-.stat-step {
-  width: 26px;
-  height: 26px;
+.ff-cell-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ff-cell-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   flex-shrink: 0;
+}
+
+.stat-badge {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--text-muted);
-  background: transparent;
+  gap: 4px;
+  padding: 4px 9px;
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: transform 0.08s, background 0.15s, color 0.15s, opacity 0.15s;
-}
-
-.stat-step:active:not(:disabled) {
-  transform: scale(0.9);
-  background: var(--card2);
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
   color: var(--text);
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s, border-color 0.15s;
+  user-select: none;
+  white-space: nowrap;
 }
 
-.stat-step:disabled {
-  opacity: 0.25;
-  cursor: not-allowed;
+.stat-badge:active {
+  transform: scale(0.92);
+  background: var(--card2);
+  border-color: var(--lime-dim);
+}
+
+.stat-badge-emoji {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.stat-badge-count {
+  min-width: 8px;
+  text-align: right;
 }
 
 /* ── COMPACT PLAYER STATS TABLE (bottom summary) ─────────── */
@@ -2139,9 +2137,7 @@ html, body {
 }
 
 .ff-hint {
-  position: absolute;
-  top: 6px;
-  right: 8px;
+  align-self: flex-start;
   font-family: 'JetBrains Mono', monospace;
   font-size: 9px;
   font-weight: 700;
@@ -2149,6 +2145,7 @@ html, body {
   text-transform: uppercase;
   padding: 2px 6px;
   border-radius: 3px;
+  margin-bottom: 2px;
 }
 
 .ff-cell.suggest-out .ff-hint {
