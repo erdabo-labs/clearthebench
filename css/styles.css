@@ -1130,8 +1130,10 @@ html, body {
 
 .ff-cell-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
 }
 
 .stat-tile {
@@ -1139,16 +1141,11 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2px;
-  padding: 3px 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  min-height: 30px;
+  gap: 4px;
 }
 
 .stat-tile-emoji {
-  font-size: 13px;
+  font-size: 14px;
   flex-shrink: 0;
 }
 
@@ -1169,24 +1166,25 @@ html, body {
   align-items: center;
   justify-content: center;
   font-family: 'DM Sans', sans-serif;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
   line-height: 1;
-  color: var(--text);
-  background: var(--card);
+  color: var(--text-muted);
+  background: transparent;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 50%;
   cursor: pointer;
-  transition: transform 0.08s, background 0.15s, opacity 0.15s;
+  transition: transform 0.08s, background 0.15s, color 0.15s, opacity 0.15s;
 }
 
 .stat-step:active:not(:disabled) {
-  transform: scale(0.92);
+  transform: scale(0.9);
   background: var(--card2);
+  color: var(--text);
 }
 
 .stat-step:disabled {
-  opacity: 0.3;
+  opacity: 0.25;
   cursor: not-allowed;
 }
 
@@ -2035,8 +2033,8 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-height: 64px;
-  padding: 12px 8px;
+  min-height: 52px;
+  padding: 10px 8px;
   font-family: 'DM Sans', sans-serif;
   border: none;
   border-radius: var(--radius);
@@ -2061,7 +2059,7 @@ html, body {
 }
 
 .play-btn-label {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.5px;
 }
