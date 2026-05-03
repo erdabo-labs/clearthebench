@@ -26,8 +26,9 @@
 
 /* ── LIGHT THEME ────────────────────────────────────────────── */
 
+/* System preference — only applies when no explicit data-theme is set */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme]) {
     --field: #f0f7ee;
     --bg: #f5faf3;
     --bg-elevated: #ffffff;
@@ -37,6 +38,18 @@
     --text: #1a2e14;
     --text-muted: #5a7a4e;
   }
+}
+
+/* Manual override */
+:root[data-theme="light"] {
+  --field: #f0f7ee;
+  --bg: #f5faf3;
+  --bg-elevated: #ffffff;
+  --card: #eaf4e6;
+  --card2: #ddefd7;
+  --border: #c4ddb8;
+  --text: #1a2e14;
+  --text-muted: #5a7a4e;
 }
 
 /* ── RESET & BASE ───────────────────────────────────────────── */
@@ -711,6 +724,108 @@ html, body {
   color: var(--text);
 }
 
+/* ── ADD PLAYER MODAL ──────────────────────────────────────── */
+
+.add-player-list {
+  margin-top: 16px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.add-player-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.08s;
+}
+
+.add-player-row:active {
+  transform: scale(0.98);
+  background: var(--card2);
+}
+
+.add-player-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.add-player-jersey {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.add-player-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.add-player-new {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.add-player-section-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.add-player-new .input-field {
+  margin-bottom: 8px;
+}
+
+.add-player-new .btn-primary {
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* ── THEME SEGMENTED CONTROL ───────────────────────────────── */
+
+.theme-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.theme-seg {
+  flex: 1;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.theme-seg.is-active {
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+}
+
 /* ── RECOVERY CARD ──────────────────────────────────────────── */
 
 .recovery-card {
@@ -835,6 +950,37 @@ html, body {
   letter-spacing: 1.5px;
   color: var(--text-muted);
   margin-bottom: 10px;
+}
+
+.zone-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.zone-title-row .zone-title {
+  margin-bottom: 0;
+}
+
+.zone-action {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s;
+}
+
+.zone-action:active {
+  transform: scale(0.95);
+  background: var(--card);
 }
 
 /* ── PLAYER CHIP (Field Players) ────────────────────────────── */
@@ -1621,21 +1767,138 @@ html, body {
 
 /* ── FLAG FOOTBALL PLAY TRACKER ────────────────────────────── */
 
-.play-tracker {
-  display: flex;
+/* ── SCOREBOARD ─────────────────────────────────────────────── */
+
+.scoreboard {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
   gap: 8px;
-  padding: 0;
-  margin-bottom: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.scoreboard.watch {
+  padding: 14px;
+}
+
+.score-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.score-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.score-value {
+  font-family: 'Bebas Neue', 'DM Sans', sans-serif;
+  font-size: 38px;
+  line-height: 1;
+  color: var(--text);
+  letter-spacing: 1px;
+}
+
+.score-divider {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  color: var(--text-muted);
+}
+
+.score-bump {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s;
+}
+
+.score-bump:active {
+  transform: scale(0.94);
+  background: var(--card2);
+}
+
+/* ── POSSESSION SWITCH ──────────────────────────────────────── */
+
+.possession-row {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.poss-seg {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.poss-seg.is-active {
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+}
+
+.poss-seg .poss-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.poss-seg .poss-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+/* ── PLAY ACTION (+1 PLAY · attribution) ───────────────────── */
+
+.play-action {
+  margin-bottom: 12px;
 }
 
 .play-btn {
-  flex: 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-height: 72px;
+  min-height: 64px;
   padding: 12px 8px;
   font-family: 'DM Sans', sans-serif;
   border: none;
@@ -1666,18 +1929,56 @@ html, body {
   letter-spacing: 0.5px;
 }
 
-.play-btn-count {
+.attr-hint {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
-  opacity: 0.85;
+  color: var(--text);
+  text-align: center;
+  margin-bottom: 8px;
+  letter-spacing: 0.3px;
 }
 
-.play-tracker-hint {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
+.attr-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.attr-cancel {
+  flex: 0 0 auto;
+  padding: 12px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
   color: var(--text-muted);
-  text-align: center;
-  margin-bottom: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s;
+}
+
+.attr-cancel:active {
+  transform: scale(0.97);
+  background: var(--card2);
+}
+
+.attr-done {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: var(--radius);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: transform 0.08s, filter 0.15s;
+}
+
+.attr-done:active {
+  transform: scale(0.97);
+  filter: brightness(0.92);
 }
 
 /* ── FOOTBALL FIELD/BENCH GRID ─────────────────────────────── */
@@ -1776,6 +2077,38 @@ html, body {
   background: var(--lime);
 }
 
+.ff-stat-extra {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* During attribution: dim non-target cells, highlight selectable ones */
+
+.ff-cell.attr-mode.attr-offense {
+  border-color: var(--lime);
+  background: color-mix(in srgb, var(--lime) 6%, var(--card));
+}
+
+.ff-cell.attr-mode.attr-defense {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 8%, var(--card));
+}
+
+.ff-cell.puller-selected {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 22%, var(--card));
+}
+
+.ff-cell.puller-selected .ff-hint.hint-pull {
+  color: #001b2e;
+  background: var(--blue);
+}
+
+.ff-cell.attr-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* ── HEADER ACTIONS (multi-button) ─────────────────────────── */
 
 .header-actions {
@@ -1832,16 +2165,6 @@ html, body {
 @keyframes spectator-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
-}
-
-.play-btn.readonly {
-  cursor: default;
-  pointer-events: none;
-  opacity: 0.95;
-}
-
-.play-tracker.watch {
-  margin-bottom: 12px;
 }
 
 /* ── ROTATION QUEUE (football) ─────────────────────────────── */

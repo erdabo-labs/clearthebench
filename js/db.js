@@ -174,6 +174,17 @@ async function db_getGameRoster(gameId) {
   return data.map(r => r.ctb_players);
 }
 
+async function db_addPlayerToGameRoster(gameId, playerId) {
+  const { data, error } = await _db
+    .from('ctb_game_roster')
+    .insert({ game_id: gameId, player_id: playerId })
+    .select()
+    .single();
+
+  if (error) { console.error('db_addPlayerToGameRoster', error); return null; }
+  return data;
+}
+
 // ── GAME EVENTS ───────────────────────────────────────────────
 
 async function db_insertEvent({ gameId, playerId, eventType, timestamp, seriesNum, meta }) {
