@@ -251,7 +251,7 @@ router_register('signin', (container) => {
         </div>
         <div class="signin-body">
           <div class="section-title">SIGN IN</div>
-          <div class="signin-sub">We'll email you a 6-digit sign-in code. (A magic link is included too — handy on a regular browser; the code is the way to go from a home-screen app.)</div>
+          <div class="signin-sub">We'll email you an 8-digit sign-in code. (A magic link is included too — handy on a regular browser; the code is the way to go from a home-screen app.)</div>
           <div class="input-group">
             <label class="input-label" for="email-input">Email</label>
             <input class="input-field" id="email-input" type="email"
@@ -260,10 +260,10 @@ router_register('signin', (container) => {
           <button class="btn-primary" id="btn-send-link">Send Sign-In Code</button>
           <div id="otp-section" style="display:none;margin-top:24px">
             <div class="input-group">
-              <label class="input-label" for="otp-input">6-digit Code</label>
+              <label class="input-label" for="otp-input">8-digit Code</label>
               <input class="input-field" id="otp-input" type="text" inputmode="numeric"
-                pattern="[0-9]*" maxlength="6" autocomplete="one-time-code"
-                placeholder="123456" />
+                pattern="[0-9]*" maxlength="8" autocomplete="one-time-code"
+                placeholder="12345678" />
             </div>
             <button class="btn-primary" id="btn-verify-otp">Sign In with Code</button>
             <button class="btn-ghost" id="btn-resend" style="margin-top:8px">Resend Code</button>
@@ -324,7 +324,7 @@ router_register('signin', (container) => {
   });
 
   otpInput?.addEventListener('input', (e) => {
-    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 8);
   });
 
   otpInput?.addEventListener('keydown', (e) => {
@@ -333,8 +333,8 @@ router_register('signin', (container) => {
 
   verifyBtn?.addEventListener('click', async () => {
     const code = otpInput.value.trim();
-    if (code.length !== 6) {
-      msgEl.textContent = 'Enter the 6-digit code from your email.';
+    if (code.length !== 8) {
+      msgEl.textContent = 'Enter the 8-digit code from your email.';
       msgEl.className = 'form-msg error';
       return;
     }
