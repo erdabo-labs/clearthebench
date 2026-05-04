@@ -1177,6 +1177,23 @@ html, body {
   text-align: center;
 }
 
+.ff-stat-action {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  padding: 1px 7px;
+  cursor: pointer;
+}
+
+.ff-stat-plus {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 .ff-stats-td-name {
   display: flex;
   align-items: center;
@@ -1860,6 +1877,43 @@ html, body {
   border-radius: var(--radius);
 }
 
+.scoreboard.compact {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.score-compact-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.scoreboard.compact .score-value {
+  font-size: 28px;
+}
+
+.score-play-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.score-play-pill {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
 .scoreboard.watch {
   padding: 14px;
 }
@@ -1978,7 +2032,7 @@ html, body {
 /* ── PLAY ACTION (+1 PLAY · attribution) ───────────────────── */
 
 .play-action {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .play-btn {
@@ -2017,6 +2071,15 @@ html, body {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.5px;
+}
+
+.football-bottom-controls {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: linear-gradient(to top, var(--bg) 86%, color-mix(in srgb, var(--bg) 65%, transparent));
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  margin-top: 8px;
 }
 
 
