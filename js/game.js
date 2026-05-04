@@ -1648,6 +1648,8 @@ function _renderFootballFieldZone() {
         <div class="ff-cell-body">
           <div class="ff-cell-info">
             <div class="ff-name">${_esc(ps.name)}</div>
+          </div>
+          <div class="ff-cell-meta">
             <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
             <div class="ff-cell-events">${statsLine}</div>
           </div>
@@ -1703,8 +1705,14 @@ function _renderFootballBenchZone() {
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
         ${hint}
-        <div class="ff-name">${_esc(ps.name)}</div>
-        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
+        <div class="ff-cell-body">
+          <div class="ff-cell-info">
+            <div class="ff-name">${_esc(ps.name)}</div>
+          </div>
+          <div class="ff-cell-meta">
+            <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
+          </div>
+        </div>
       </div>
     `;
   }
