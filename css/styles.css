@@ -2069,23 +2069,23 @@ html, body {
 .ff-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 4px;
+  margin-bottom: 4px;
 }
 
 .ff-cell {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
+  gap: 1px;
+  padding: 6px 8px;
   background: var(--card);
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   user-select: none;
   transition: transform 0.08s, background 0.15s, border-color 0.15s;
-  min-height: 56px;
+  min-height: 46px;
 }
 
 .ff-cell:active {
@@ -2109,31 +2109,56 @@ html, body {
 
 .ff-name {
   font-family: 'DM Sans', sans-serif;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text);
-  line-height: 1.15;
+  line-height: 1.1;
   word-break: break-word;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: calc(1.15em * 2);
+  min-height: 1.1em;
 }
 
 .ff-stats {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
+  font-weight: 700;
   color: var(--text-muted);
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.ff-cell-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.ff-mini-action {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  background: color-mix(in srgb, var(--card2) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.ff-mini-action:active {
+  transform: scale(0.95);
 }
 
 .ff-cell-events {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text);
-  letter-spacing: 0.3px;
-  margin-top: 1px;
+  letter-spacing: 0.2px;
+  margin-top: 0;
+  white-space: nowrap;
 }
 
 .ff-stat-on {
@@ -2151,22 +2176,25 @@ html, body {
 }
 
 .ff-hint {
+  position: absolute;
+  top: 6px;
+  left: 8px;
   display: inline-flex;
   align-items: center;
-  align-self: flex-start;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.6px;
   text-transform: uppercase;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 3px;
-  margin-bottom: 2px;
-  min-height: 16px;
+  margin-bottom: 0;
+  min-height: 14px;
+  z-index: 1;
 }
 
 .ff-hint-placeholder {
-  visibility: hidden;
+  display: none;
 }
 
 .ff-cell.suggest-out .ff-hint {
