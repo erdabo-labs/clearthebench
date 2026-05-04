@@ -1611,16 +1611,12 @@ function _renderFootballFieldZone() {
   }
 
   const editable = !_gs.watchMode;
-  const possession = _gs.possession || 'offense';
 
   let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
   html += '<div class="ff-grid">';
   for (const ps of fieldPlayers) {
     const played = _getPlayedTime(ps);
     const sat = _getBenchWait(ps);
-    const carries = _gs.carries?.[ps.id] || 0;
-    const pulls = _gs.pulls?.[ps.id] || 0;
-    const tds = _gs.tds?.[ps.id] || 0;
     const isQueued = queueOutSet.has(ps.id);
     const isSuggestedOut = !isQueued && ps.id === nextOutId;
 
@@ -1628,22 +1624,9 @@ function _renderFootballFieldZone() {
     if (isQueued) cls += ' queued-out';
     else if (isSuggestedOut) cls += ' suggest-out';
 
-    let hint = '';
+    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
     if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
     else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
-
-    let badges = '';
-    if (editable) {
-      badges = '<div class="ff-cell-badges">'
-        + (possession === 'offense'
-            ? _statBadgeHtml(ps.id, 'carry', '🏈', carries) + _statBadgeHtml(ps.id, 'td', '🏆', tds)
-            : _statBadgeHtml(ps.id, 'flag_pull', '🚩', pulls))
-        + '</div>';
-    }
-
-    const extraStats = !editable && (carries || pulls || tds)
-      ? `<span class="ff-stat-extra">${carries ? ' · 🏈' + carries : ''}${pulls ? ' · 🚩' + pulls : ''}${tds ? ' · 🏆' + tds : ''}</span>`
-      : '';
 
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
@@ -1651,9 +1634,8 @@ function _renderFootballFieldZone() {
         <div class="ff-cell-body">
           <div class="ff-cell-info">
             <div class="ff-name">${_esc(ps.name)}</div>
-            <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span>${extraStats}</div>
+            <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
           </div>
-          ${badges}
         </div>
       </div>
     `;
@@ -1667,32 +1649,7 @@ function _renderFootballFieldZone() {
         _handleFieldPlayerTap(cell.dataset.playerId);
       });
     });
-    zone.querySelectorAll('.stat-badge').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        _bumpPlayerStat(btn.dataset.playerId, btn.dataset.stat);
-      });
-    });
   }
-}
-
-function _statBadgeHtml(playerId, stat, emoji, count) {
-  return `
-    <button class="stat-badge" data-player-id="${playerId}" data-stat="${stat}">
-      <span class="stat-badge-emoji">${emoji}</span>
-      <span class="stat-badge-count">${count}</span>
-    </button>
-  `;
-}
-
-async function _bumpPlayerStat(playerId, stat) {
-  const player = _gs.players[playerId];
-  if (!player) return;
-  await _adjustPlayerStat(playerId, stat, 1);
-  const emoji = stat === 'carry' ? '🏈' : stat === 'flag_pull' ? '🚩' : '🏆';
-  _showUndoToast(player.name + ' +' + emoji, () => {
-    _adjustPlayerStat(playerId, stat, -1);
-  });
 }
 
 function _renderFootballBenchZone() {
@@ -1720,25 +1677,19 @@ function _renderFootballBenchZone() {
     const ps = benchPlayers[i];
     const sat = _getBenchWait(ps);
     const played = _getPlayedTime(ps);
-    const carries = _gs.carries?.[ps.id] || 0;
-    const pulls = _gs.pulls?.[ps.id] || 0;
-    const tds = _gs.tds?.[ps.id] || 0;
     const isQueued = queueInSet.has(ps.id);
     const isSuggestedIn = !isQueued && ps.id === nextInId;
     let cls = 'ff-cell bench';
     if (isQueued) cls += ' queued-in';
     else if (isSuggestedIn) cls += ' suggest-in';
-    let hint = '';
+    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
     if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
     else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
-    const extraStats = (carries || pulls || tds)
-      ? `<span class="ff-stat-extra">${carries ? ' · 🏈' + carries : ''}${pulls ? ' · 🚩' + pulls : ''}${tds ? ' · 🏆' + tds : ''}</span>`
-      : '';
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
         ${hint}
         <div class="ff-name">${_esc(ps.name)}</div>
-        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span>${extraStats}</div>
+        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
       </div>
     `;
   }
