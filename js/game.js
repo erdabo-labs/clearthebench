@@ -1624,7 +1624,7 @@ function _renderFootballFieldZone() {
     if (isQueued) cls += ' queued-out';
     else if (isSuggestedOut) cls += ' suggest-out';
 
-    let hint = '';
+    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
     if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
     else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
 
@@ -1682,7 +1682,7 @@ function _renderFootballBenchZone() {
     let cls = 'ff-cell bench';
     if (isQueued) cls += ' queued-in';
     else if (isSuggestedIn) cls += ' suggest-in';
-    let hint = '';
+    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
     if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
     else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
     html += `

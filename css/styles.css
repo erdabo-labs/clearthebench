@@ -2070,6 +2070,11 @@ html, body {
   color: var(--text);
   line-height: 1.15;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(1.15em * 2);
 }
 
 .ff-stats {
@@ -2094,6 +2099,8 @@ html, body {
 }
 
 .ff-hint {
+  display: inline-flex;
+  align-items: center;
   align-self: flex-start;
   font-family: 'JetBrains Mono', monospace;
   font-size: 9px;
@@ -2103,6 +2110,11 @@ html, body {
   padding: 2px 6px;
   border-radius: 3px;
   margin-bottom: 2px;
+  min-height: 16px;
+}
+
+.ff-hint-placeholder {
+  visibility: hidden;
 }
 
 .ff-cell.suggest-out .ff-hint {
