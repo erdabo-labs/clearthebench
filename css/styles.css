@@ -2152,6 +2152,28 @@ html, body {
   white-space: nowrap;
 }
 
+
+.ff-card-stat-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ff-card-stat-btn {
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text);
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  line-height: 1.4;
+}
+
+.ff-card-stat-btn:active {
+  transform: scale(0.97);
+}
+
 .ff-cell-events {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
