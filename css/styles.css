@@ -1869,49 +1869,34 @@ html, body {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: 12px;
+  padding: 10px 12px;
   margin-bottom: 10px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 
+.scoreboard.watch {
+  padding: 12px 14px;
+}
+
+/* Sticky top: holds the game-header (logo + actions) and the rotation queue.
+   The game-header keeps its own env(safe-area-inset-top) padding so the
+   logo never slides under the Dynamic Island. */
 .sticky-top {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 30;
   background: var(--bg);
+}
+
+.sticky-top > .game-header {
+  padding-bottom: 8px;
+}
+
+.sticky-top > .rotation-queue.visible {
   margin-bottom: 8px;
-}
-
-.sticky-top > .scoreboard.compact,
-.sticky-top > .rotation-queue {
-  margin-bottom: 0;
-}
-
-.sticky-top > .scoreboard.compact + .rotation-queue.visible {
-  margin-top: 6px;
-}
-
-.scoreboard.compact {
-  padding: 8px 10px;
-}
-
-.score-compact-row {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-}
-
-.scoreboard.compact .score-value {
-  font-size: 28px;
-}
-
-.scoreboard.watch {
-  padding: 14px;
 }
 
 .score-side {
@@ -1937,7 +1922,7 @@ html, body {
 
 .score-value {
   font-family: 'Bebas Neue', 'DM Sans', sans-serif;
-  font-size: 38px;
+  font-size: 30px;
   line-height: 1;
   color: var(--text);
   letter-spacing: 1px;
@@ -1945,7 +1930,7 @@ html, body {
 
 .score-divider {
   font-family: 'Bebas Neue', sans-serif;
-  font-size: 28px;
+  font-size: 24px;
   color: var(--text-muted);
 }
 
@@ -1985,7 +1970,7 @@ html, body {
   display: flex;
   gap: 6px;
   padding: 4px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -2084,16 +2069,16 @@ html, body {
 .ff-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .ff-cell {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 12px 10px;
+  gap: 2px;
+  padding: 8px 10px;
   background: var(--card);
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
@@ -2141,6 +2126,14 @@ html, body {
   font-size: 12px;
   color: var(--text-muted);
   letter-spacing: 0.3px;
+}
+
+.ff-cell-events {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+  letter-spacing: 0.3px;
+  margin-top: 1px;
 }
 
 .ff-stat-on {
