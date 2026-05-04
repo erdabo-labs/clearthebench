@@ -1126,8 +1126,6 @@ html, body {
   color: var(--orange);
 }
 
-/* ── IN-CELL STAT BADGES (tap = +1, undo via toast) ────────── */
-
 .ff-cell-body {
   display: flex;
   flex-direction: row;
@@ -1143,47 +1141,6 @@ html, body {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-}
-
-.ff-cell-badges {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.stat-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 9px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text);
-  cursor: pointer;
-  transition: transform 0.08s, background 0.15s, border-color 0.15s;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.stat-badge:active {
-  transform: scale(0.92);
-  background: var(--card2);
-  border-color: var(--lime-dim);
-}
-
-.stat-badge-emoji {
-  font-size: 13px;
-  line-height: 1;
-}
-
-.stat-badge-count {
-  min-width: 8px;
-  text-align: right;
 }
 
 /* ── COMPACT PLAYER STATS TABLE (bottom summary) ─────────── */
@@ -2156,11 +2113,6 @@ html, body {
 .ff-cell.suggest-in .ff-hint {
   color: #0e1f0a;
   background: var(--lime);
-}
-
-.ff-stat-extra {
-  color: var(--text-muted);
-  font-weight: 600;
 }
 
 /* ── HEADER ACTIONS (multi-button) ─────────────────────────── */
