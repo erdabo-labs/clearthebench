@@ -1319,13 +1319,15 @@ function _renderFootballGameScreen() {
             <div class="header-action" id="btn-end-game">END</div>
           </div>
         </div>
-        <div class="scoreboard" id="scoreboard"></div>
-        <div class="possession-row" id="possession-row"></div>
-        <div class="play-action" id="play-action"></div>
+        <div class="scoreboard compact" id="scoreboard"></div>
         <div class="rotation-queue" id="rotation-queue"></div>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
         <div class="team-stats" id="team-stats"></div>
+        <div class="football-bottom-controls">
+          <div class="possession-row" id="possession-row"></div>
+          <div class="play-action" id="play-action"></div>
+        </div>
       </div>
     </div>
   `;
@@ -1348,22 +1350,30 @@ function _renderFootballScoreboard() {
   const opp = _gs.score?.opp || 0;
   const teamName = _gs.team?.name ? _esc(_gs.team.name) : 'US';
   const oppName = _gs.game?.opponent ? _esc(_gs.game.opponent) : 'OPP';
+  const off = _gs.offPlays || 0;
+  const def = _gs.defPlays || 0;
   zone.innerHTML = `
-    <div class="score-side score-us">
-      <div class="score-label">${teamName}</div>
-      <div class="score-value">${us}</div>
-      <div class="score-bumps">
-        <button class="score-bump" data-team="us" data-delta="-1" ${us <= 0 ? 'disabled' : ''}>−1</button>
-        <button class="score-bump" data-team="us" data-delta="1">+1</button>
+    <div class="score-compact-row">
+      <div class="score-side score-us">
+        <div class="score-label">${teamName}</div>
+        <div class="score-value">${us}</div>
+        <div class="score-bumps">
+          <button class="score-bump" data-team="us" data-delta="-1" ${us <= 0 ? 'disabled' : ''}>−1</button>
+          <button class="score-bump" data-team="us" data-delta="1">+1</button>
+        </div>
       </div>
-    </div>
-    <div class="score-divider">—</div>
-    <div class="score-side score-opp">
-      <div class="score-label">${oppName}</div>
-      <div class="score-value">${opp}</div>
-      <div class="score-bumps">
-        <button class="score-bump" data-team="opp" data-delta="-1" ${opp <= 0 ? 'disabled' : ''}>−1</button>
-        <button class="score-bump" data-team="opp" data-delta="1">+1</button>
+      <div class="score-divider">—</div>
+      <div class="score-side score-opp">
+        <div class="score-label">${oppName}</div>
+        <div class="score-value">${opp}</div>
+        <div class="score-bumps">
+          <button class="score-bump" data-team="opp" data-delta="-1" ${opp <= 0 ? 'disabled' : ''}>−1</button>
+          <button class="score-bump" data-team="opp" data-delta="1">+1</button>
+        </div>
+      </div>
+      <div class="score-play-counts">
+        <span class="score-play-pill">OFF ${off}</span>
+        <span class="score-play-pill">DEF ${def}</span>
       </div>
     </div>
   `;
@@ -1618,9 +1628,6 @@ function _renderFootballFieldZone() {
   for (const ps of fieldPlayers) {
     const played = _getPlayedTime(ps);
     const sat = _getBenchWait(ps);
-    const carries = _gs.carries?.[ps.id] || 0;
-    const pulls = _gs.pulls?.[ps.id] || 0;
-    const tds = _gs.tds?.[ps.id] || 0;
     const isQueued = queueOutSet.has(ps.id);
     const isSuggestedOut = !isQueued && ps.id === nextOutId;
 
@@ -1628,22 +1635,9 @@ function _renderFootballFieldZone() {
     if (isQueued) cls += ' queued-out';
     else if (isSuggestedOut) cls += ' suggest-out';
 
-    let hint = '';
+    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
     if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
     else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
-
-    let badges = '';
-    if (editable) {
-      badges = '<div class="ff-cell-badges">'
-        + (possession === 'offense'
-            ? _statBadgeHtml(ps.id, 'carry', '🏈', carries) + _statBadgeHtml(ps.id, 'td', '🏆', tds)
-            : _statBadgeHtml(ps.id, 'flag_pull', '🚩', pulls))
-        + '</div>';
-    }
-
-    const extraStats = !editable && (carries || pulls || tds)
-      ? `<span class="ff-stat-extra">${carries ? ' · 🏈' + carries : ''}${pulls ? ' · 🚩' + pulls : ''}${tds ? ' · 🏆' + tds : ''}</span>`
-      : '';
 
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
@@ -1651,9 +1645,14 @@ function _renderFootballFieldZone() {
         <div class="ff-cell-body">
           <div class="ff-cell-info">
             <div class="ff-name">${_esc(ps.name)}</div>
-            <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span>${extraStats}</div>
+            <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
           </div>
-          ${badges}
+          ${editable ? `<div class="ff-cell-badges">
+            ${possession === 'offense'
+              ? _statBadgeHtml(ps.id, 'carry', '🏈', 'CARRY')
+              : _statBadgeHtml(ps.id, 'flag_pull', '🚩', 'FLAG')}
+            ${_statBadgeHtml(ps.id, 'td', '🏆', 'TD')}
+          </div>` : ''}
         </div>
       </div>
     `;
@@ -1676,23 +1675,13 @@ function _renderFootballFieldZone() {
   }
 }
 
-function _statBadgeHtml(playerId, stat, emoji, count) {
+function _statBadgeHtml(playerId, stat, emoji, label) {
   return `
     <button class="stat-badge" data-player-id="${playerId}" data-stat="${stat}">
       <span class="stat-badge-emoji">${emoji}</span>
-      <span class="stat-badge-count">${count}</span>
+      <span class="stat-badge-label">${label}</span>
     </button>
   `;
-}
-
-async function _bumpPlayerStat(playerId, stat) {
-  const player = _gs.players[playerId];
-  if (!player) return;
-  await _adjustPlayerStat(playerId, stat, 1);
-  const emoji = stat === 'carry' ? '🏈' : stat === 'flag_pull' ? '🚩' : '🏆';
-  _showUndoToast(player.name + ' +' + emoji, () => {
-    _adjustPlayerStat(playerId, stat, -1);
-  });
 }
 
 function _renderFootballBenchZone() {
@@ -1720,25 +1709,19 @@ function _renderFootballBenchZone() {
     const ps = benchPlayers[i];
     const sat = _getBenchWait(ps);
     const played = _getPlayedTime(ps);
-    const carries = _gs.carries?.[ps.id] || 0;
-    const pulls = _gs.pulls?.[ps.id] || 0;
-    const tds = _gs.tds?.[ps.id] || 0;
     const isQueued = queueInSet.has(ps.id);
     const isSuggestedIn = !isQueued && ps.id === nextInId;
     let cls = 'ff-cell bench';
     if (isQueued) cls += ' queued-in';
     else if (isSuggestedIn) cls += ' suggest-in';
-    let hint = '';
+    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
     if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
     else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
-    const extraStats = (carries || pulls || tds)
-      ? `<span class="ff-stat-extra">${carries ? ' · 🏈' + carries : ''}${pulls ? ' · 🚩' + pulls : ''}${tds ? ' · 🏆' + tds : ''}</span>`
-      : '';
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
         ${hint}
         <div class="ff-name">${_esc(ps.name)}</div>
-        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span>${extraStats}</div>
+        <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
       </div>
     `;
   }
@@ -1855,6 +1838,7 @@ async function _addPlayerToActiveGame(playerId, playerObj) {
 function _renderFootballTeamStats() {
   const zone = _gs.container.querySelector('#team-stats');
   if (!zone) return;
+  const editable = !_gs.watchMode;
 
   const allPlayers = Object.values(_gs.players)
     .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
@@ -1875,16 +1859,44 @@ function _renderFootballTeamStats() {
     const pulls = _gs.pulls?.[ps.id] || 0;
     const tds = _gs.tds?.[ps.id] || 0;
     const dot = ps.onField ? '<span class="ff-on-dot" title="on field"></span>' : '';
+    const carryCell = editable
+      ? `<button class="ff-stat-action" data-player-id="${ps.id}" data-stat="carry"><span class="ff-stat-num">${carries}</span><span class="ff-stat-plus">+1</span></button>`
+      : `<span class="ff-stat-num">${carries}</span>`;
+    const pullCell = editable
+      ? `<button class="ff-stat-action" data-player-id="${ps.id}" data-stat="flag_pull"><span class="ff-stat-num">${pulls}</span><span class="ff-stat-plus">+1</span></button>`
+      : `<span class="ff-stat-num">${pulls}</span>`;
+    const tdCell = editable
+      ? `<button class="ff-stat-action" data-player-id="${ps.id}" data-stat="td"><span class="ff-stat-num">${tds}</span><span class="ff-stat-plus">+1</span></button>`
+      : `<span class="ff-stat-num">${tds}</span>`;
     html += `
       <div class="ff-stats-td-name">${dot}${_esc(ps.name)}</div>
       <div class="ff-stats-td-time"><span class="ff-stat-on">${played}</span>/<span class="ff-stat-off">${benched}</span></div>
-      <div class="ff-stats-td">${carries}</div>
-      <div class="ff-stats-td">${pulls}</div>
-      <div class="ff-stats-td">${tds}</div>
+      <div class="ff-stats-td">${carryCell}</div>
+      <div class="ff-stats-td">${pullCell}</div>
+      <div class="ff-stats-td">${tdCell}</div>
     `;
   }
   html += '</div>';
   zone.innerHTML = html;
+
+  if (editable) {
+    zone.querySelectorAll('.ff-stat-action').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        _bumpPlayerStat(btn.dataset.playerId, btn.dataset.stat);
+      });
+    });
+  }
+}
+
+async function _bumpPlayerStat(playerId, stat) {
+  const player = _gs.players[playerId];
+  if (!player) return;
+  await _adjustPlayerStat(playerId, stat, 1);
+  const emoji = stat === 'carry' ? '🏈' : stat === 'flag_pull' ? '🚩' : '🏆';
+  _showUndoToast(player.name + ' +' + emoji, () => {
+    _adjustPlayerStat(playerId, stat, -1);
+  });
 }
 
 function _bindFootballGameControls() {
