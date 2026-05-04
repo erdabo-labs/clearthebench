@@ -1319,8 +1319,10 @@ function _renderFootballGameScreen() {
             <div class="header-action" id="btn-end-game">END</div>
           </div>
         </div>
-        <div class="scoreboard compact" id="scoreboard"></div>
-        <div class="rotation-queue" id="rotation-queue"></div>
+        <div class="sticky-top">
+          <div class="scoreboard compact" id="scoreboard"></div>
+          <div class="rotation-queue" id="rotation-queue"></div>
+        </div>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
         <div class="team-stats" id="team-stats"></div>
@@ -1350,8 +1352,6 @@ function _renderFootballScoreboard() {
   const opp = _gs.score?.opp || 0;
   const teamName = _gs.team?.name ? _esc(_gs.team.name) : 'US';
   const oppName = _gs.game?.opponent ? _esc(_gs.game.opponent) : 'OPP';
-  const off = _gs.offPlays || 0;
-  const def = _gs.defPlays || 0;
   zone.innerHTML = `
     <div class="score-compact-row">
       <div class="score-side score-us">
@@ -1370,10 +1370,6 @@ function _renderFootballScoreboard() {
           <button class="score-bump" data-team="opp" data-delta="-1" ${opp <= 0 ? 'disabled' : ''}>−1</button>
           <button class="score-bump" data-team="opp" data-delta="1">+1</button>
         </div>
-      </div>
-      <div class="score-play-counts">
-        <span class="score-play-pill">OFF ${off}</span>
-        <span class="score-play-pill">DEF ${def}</span>
       </div>
     </div>
   `;
@@ -2088,8 +2084,7 @@ function _renderWatchScreen() {
           <span class="spectator-dot"></span>
           <span>Live &mdash; ${_esc(_gs.team?.name || '')}${opponent}</span>
         </div>
-        ${watchScoreboard}
-        ${isFootball ? '<div class="rotation-queue" id="rotation-queue"></div>' : ''}
+        ${isFootball ? `<div class="sticky-top">${watchScoreboard}<div class="rotation-queue" id="rotation-queue"></div></div>` : watchScoreboard}
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
         ${isFootball ? '<div class="team-stats" id="team-stats"></div>' : ''}
