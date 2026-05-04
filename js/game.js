@@ -1637,10 +1637,13 @@ function _renderFootballFieldZone() {
     if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
     else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
 
-    // Read-only stats line: coach view is possession-contextual; watch view shows all three.
-    const statsLine = isWatch
-      ? `🏈${carries} · 🚩${pulls} · 🏆${tds}`
-      : (possession === 'offense' ? `🏈${carries} · 🏆${tds}` : `🚩${pulls} · 🏆${tds}`);
+    const showOffenseStats = possession === 'offense';
+    const statsLine = showOffenseStats ? `🏈${carries} · 🏆${tds}` : `🚩${pulls} · 🏆${tds}`;
+    const statsActions = editable
+      ? (showOffenseStats
+        ? `<button class="ff-card-stat-btn" data-player-id="${ps.id}" data-stat="carry">🏈 ${carries}</button><button class="ff-card-stat-btn" data-player-id="${ps.id}" data-stat="td">🏆 ${tds}</button>`
+        : `<button class="ff-card-stat-btn" data-player-id="${ps.id}" data-stat="flag_pull">🚩 ${pulls}</button><button class="ff-card-stat-btn" data-player-id="${ps.id}" data-stat="td">🏆 ${tds}</button>`)
+      : '';
 
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
@@ -1650,8 +1653,8 @@ function _renderFootballFieldZone() {
             <div class="ff-name">${_esc(ps.name)}</div>
           </div>
           <div class="ff-cell-meta">
-            <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
-            <div class="ff-cell-events">${statsLine}</div>
+            <div class="ff-stats"><span class="ff-stat-on">🏃 ${played}</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">🪑 ${sat}</span></div>
+            ${editable ? `<div class="ff-card-stat-actions">${statsActions}</div>` : `<div class="ff-cell-events">${statsLine}</div>`}
           </div>
         </div>
       </div>
@@ -1664,6 +1667,13 @@ function _renderFootballFieldZone() {
     zone.querySelectorAll('.ff-cell').forEach(cell => {
       cell.addEventListener('click', () => {
         _handleFieldPlayerTap(cell.dataset.playerId);
+      });
+    });
+    zone.querySelectorAll('.ff-card-stat-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        _bumpPlayerStat(btn.dataset.playerId, btn.dataset.stat);
       });
     });
   }
@@ -1710,7 +1720,7 @@ function _renderFootballBenchZone() {
             <div class="ff-name">${_esc(ps.name)}</div>
           </div>
           <div class="ff-cell-meta">
-            <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
+            <div class="ff-stats"><span class="ff-stat-on">🏃 ${played}</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">🪑 ${sat}</span></div>
           </div>
         </div>
       </div>
