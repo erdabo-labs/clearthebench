@@ -1312,19 +1312,19 @@ function _renderFootballGameScreen() {
   c.innerHTML = `
     <div class="screen">
       <div class="screen-body">
-        <div class="game-header">
-          <div class="app-logo">Clear<span>The</span>Bench</div>
-          <div class="header-actions">
-            <button class="header-btn" id="btn-share-watch" title="Share spectator link">SHARE</button>
-            <div class="header-action" id="btn-end-game">END</div>
-          </div>
-        </div>
         <div class="sticky-top">
-          <div class="scoreboard compact" id="scoreboard"></div>
+          <div class="game-header">
+            <div class="app-logo">Clear<span>The</span>Bench</div>
+            <div class="header-actions">
+              <button class="header-btn" id="btn-share-watch" title="Share spectator link">SHARE</button>
+              <div class="header-action" id="btn-end-game">END</div>
+            </div>
+          </div>
           <div class="rotation-queue" id="rotation-queue"></div>
         </div>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
+        <div class="scoreboard" id="scoreboard"></div>
         <div class="team-stats" id="team-stats"></div>
         <div class="football-bottom-controls">
           <div class="possession-row" id="possession-row"></div>
@@ -1353,23 +1353,21 @@ function _renderFootballScoreboard() {
   const teamName = _gs.team?.name ? _esc(_gs.team.name) : 'US';
   const oppName = _gs.game?.opponent ? _esc(_gs.game.opponent) : 'OPP';
   zone.innerHTML = `
-    <div class="score-compact-row">
-      <div class="score-side score-us">
-        <div class="score-label">${teamName}</div>
-        <div class="score-value">${us}</div>
-        <div class="score-bumps">
-          <button class="score-bump" data-team="us" data-delta="-1" ${us <= 0 ? 'disabled' : ''}>−1</button>
-          <button class="score-bump" data-team="us" data-delta="1">+1</button>
-        </div>
+    <div class="score-side score-us">
+      <div class="score-label">${teamName}</div>
+      <div class="score-value">${us}</div>
+      <div class="score-bumps">
+        <button class="score-bump" data-team="us" data-delta="-1" ${us <= 0 ? 'disabled' : ''}>−1</button>
+        <button class="score-bump" data-team="us" data-delta="1">+1</button>
       </div>
-      <div class="score-divider">—</div>
-      <div class="score-side score-opp">
-        <div class="score-label">${oppName}</div>
-        <div class="score-value">${opp}</div>
-        <div class="score-bumps">
-          <button class="score-bump" data-team="opp" data-delta="-1" ${opp <= 0 ? 'disabled' : ''}>−1</button>
-          <button class="score-bump" data-team="opp" data-delta="1">+1</button>
-        </div>
+    </div>
+    <div class="score-divider">—</div>
+    <div class="score-side score-opp">
+      <div class="score-label">${oppName}</div>
+      <div class="score-value">${opp}</div>
+      <div class="score-bumps">
+        <button class="score-bump" data-team="opp" data-delta="-1" ${opp <= 0 ? 'disabled' : ''}>−1</button>
+        <button class="score-bump" data-team="opp" data-delta="1">+1</button>
       </div>
     </div>
   `;
@@ -1617,12 +1615,17 @@ function _renderFootballFieldZone() {
   }
 
   const editable = !_gs.watchMode;
+  const isWatch = !!_gs.watchMode;
+  const possession = _gs.possession || 'offense';
 
   let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
   html += '<div class="ff-grid">';
   for (const ps of fieldPlayers) {
     const played = _getPlayedTime(ps);
     const sat = _getBenchWait(ps);
+    const carries = _gs.carries?.[ps.id] || 0;
+    const pulls = _gs.pulls?.[ps.id] || 0;
+    const tds = _gs.tds?.[ps.id] || 0;
     const isQueued = queueOutSet.has(ps.id);
     const isSuggestedOut = !isQueued && ps.id === nextOutId;
 
@@ -1634,6 +1637,11 @@ function _renderFootballFieldZone() {
     if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
     else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
 
+    // Read-only stats line: coach view is possession-contextual; watch view shows all three.
+    const statsLine = isWatch
+      ? `🏈${carries} · 🚩${pulls} · 🏆${tds}`
+      : (possession === 'offense' ? `🏈${carries} · 🏆${tds}` : `🚩${pulls} · 🏆${tds}`);
+
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
         ${hint}
@@ -1641,6 +1649,7 @@ function _renderFootballFieldZone() {
           <div class="ff-cell-info">
             <div class="ff-name">${_esc(ps.name)}</div>
             <div class="ff-stats"><span class="ff-stat-on">${played}P</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">${sat}S</span></div>
+            <div class="ff-cell-events">${statsLine}</div>
           </div>
         </div>
       </div>
@@ -2077,16 +2086,19 @@ function _renderWatchScreen() {
   c.innerHTML = `
     <div class="screen">
       <div class="screen-body">
-        <div class="game-header">
-          <div class="app-logo">Clear<span>The</span>Bench</div>
+        <div class="sticky-top">
+          <div class="game-header">
+            <div class="app-logo">Clear<span>The</span>Bench</div>
+          </div>
+          <div class="spectator-banner">
+            <span class="spectator-dot"></span>
+            <span>Live &mdash; ${_esc(_gs.team?.name || '')}${opponent}</span>
+          </div>
+          ${isFootball ? '<div class="rotation-queue" id="rotation-queue"></div>' : ''}
         </div>
-        <div class="spectator-banner">
-          <span class="spectator-dot"></span>
-          <span>Live &mdash; ${_esc(_gs.team?.name || '')}${opponent}</span>
-        </div>
-        ${isFootball ? `<div class="sticky-top">${watchScoreboard}<div class="rotation-queue" id="rotation-queue"></div></div>` : watchScoreboard}
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
+        ${isFootball ? watchScoreboard : ''}
         ${isFootball ? '<div class="team-stats" id="team-stats"></div>' : ''}
       </div>
     </div>
