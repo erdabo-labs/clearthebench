@@ -2145,11 +2145,22 @@ html, body {
 }
 
 .ff-stats {
+  display: flex;
+  gap: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 0.2px;
   white-space: nowrap;
+}
+
+.ff-stat-pill {
+  border: 1px solid var(--border);
+  background: var(--card2);
+  border-radius: 999px;
+  font-weight: 700;
+  padding: 1px 7px;
+  line-height: 1.4;
 }
 
 
@@ -2185,16 +2196,12 @@ html, body {
 
 .ff-stat-on {
   color: var(--lime);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .ff-stat-off {
   color: var(--orange);
-  font-weight: 600;
-}
-
-.ff-stat-sep {
-  opacity: 0.5;
+  font-weight: 700;
 }
 
 .ff-hint {

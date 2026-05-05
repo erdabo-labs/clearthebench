@@ -1653,7 +1653,7 @@ function _renderFootballFieldZone() {
             <div class="ff-name">${_esc(ps.name)}</div>
           </div>
           <div class="ff-cell-meta">
-            <div class="ff-stats"><span class="ff-stat-on">🏃 ${played}</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">🪑 ${sat}</span></div>
+            <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${played}</span><span class="ff-stat-pill ff-stat-off">🪑 ${sat}</span></div>
             ${editable ? `<div class="ff-card-stat-actions">${statsActions}</div>` : `<div class="ff-cell-events">${statsLine}</div>`}
           </div>
         </div>
@@ -1720,7 +1720,7 @@ function _renderFootballBenchZone() {
             <div class="ff-name">${_esc(ps.name)}</div>
           </div>
           <div class="ff-cell-meta">
-            <div class="ff-stats"><span class="ff-stat-on">🏃 ${played}</span> <span class="ff-stat-sep">·</span> <span class="ff-stat-off">🪑 ${sat}</span></div>
+            <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${played}</span><span class="ff-stat-pill ff-stat-off">🪑 ${sat}</span></div>
           </div>
         </div>
       </div>
