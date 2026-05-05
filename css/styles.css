@@ -2501,3 +2501,115 @@ html, body {
   background: var(--orange);
   color: #1a0e00;
 }
+
+/* ── SOCCER TIMER PANEL ──────────────────────────────────── */
+
+.soccer-timer-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin: 0 0 8px;
+}
+
+.soccer-timer-panel .timer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.soccer-timer-panel .timer-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.soccer-timer-panel .timer-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.soccer-timer-panel .timer-interval {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.soccer-timer-panel .timer-clock {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--lime);
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.soccer-timer-panel .timer-clock.paused {
+  color: var(--text-muted);
+}
+
+.soccer-timer-panel .timer-clock.overdue {
+  color: var(--orange);
+}
+
+.soccer-timer-panel .timer-controls {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.soccer-timer-panel .timer-btn {
+  flex: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s;
+}
+
+.soccer-timer-panel .timer-btn:active {
+  transform: scale(0.97);
+  background: var(--card);
+}
+
+.soccer-timer-panel .timer-btn-primary {
+  color: var(--lime);
+  border-color: var(--lime);
+}
+
+/* sticky parent rules for the timer panel */
+.sticky-top > .soccer-timer-panel {
+  margin: 0;
+}
+
+/* Soccer team-stats: 3 cols (Player | P/S | 🥅) instead of football's 5 */
+.soccer-stats-table {
+  grid-template-columns: 1fr 64px 56px;
+}
+
+.modal-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  margin: -4px 0 6px;
+}
+
+.stepper-unit {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 4px;
+}

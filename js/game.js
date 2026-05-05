@@ -409,15 +409,11 @@ router_register('game', async (container, params) => {
     timerRunning: false,
     timerSeconds: 0,
     timerInterval: null,
-    pendingBenchPlayer: null,
-    lastSwap: null,
     container,
     alertInterval,
-    proposedSwaps: null,
     wakeLock: null,
     lastAlertAt: 0,
-    earlyAlertFired: false,
-    fullAlertFired: false,
+    alertFired: false,
     offPlays: 0,
     defPlays: 0,
     queueIn: [],
@@ -554,40 +550,33 @@ function _renderGameScreen() {
   c.innerHTML = `
     <div class="screen">
       <div class="screen-body">
-        <div class="game-header">
-          <div class="app-logo">Clear<span>The</span>Bench</div>
-          <div class="header-action" id="btn-end-game">END</div>
-        </div>
-        <div class="game-timer-bar">
-          <div class="timer-dot${_gs.timerRunning ? '' : ' stopped'}" id="timer-dot"></div>
-          <div class="game-clock${_gs.timerRunning ? '' : ' paused'}" id="game-clock">${_fmt(_gs.timerSeconds)}</div>
-          <div class="game-controls">
-            <button class="btn-ghost" id="btn-start-pause">${_gs.timerRunning ? 'PAUSE' : 'START'}</button>
+        <div class="sticky-top">
+          <div class="game-header">
+            <div class="app-logo">Clear<span>The</span>Bench</div>
+            <div class="header-actions">
+              <button class="header-btn" id="btn-share-watch" title="Share spectator link">SHARE</button>
+              <div class="header-action" id="btn-end-game">END</div>
+            </div>
           </div>
+          <div class="soccer-timer-panel" id="timer-panel"></div>
+          <div class="rotation-queue" id="rotation-queue"></div>
         </div>
-        <div class="rotation-countdown" id="rotation-countdown"></div>
-        <button class="btn-rotate" id="btn-rotate">ROTATE</button>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
+        <div class="scoreboard" id="scoreboard"></div>
         <div class="team-stats" id="team-stats"></div>
-      </div>
-      <div class="swap-preview-overlay" id="swap-preview" style="display:none">
-        <div class="swap-preview-sheet">
-          <div class="preview-title">PROPOSED ROTATION</div>
-          <div class="preview-countdown" id="preview-countdown"></div>
-          <div class="preview-pairs" id="preview-pairs"></div>
-          <button class="btn-primary" id="btn-confirm-rotate">ROTATE NOW</button>
-          <button class="btn-ghost" id="btn-cancel-rotate" style="margin-top:8px">Cancel</button>
-        </div>
       </div>
     </div>
   `;
 
-  _renderFieldZone();
-  _renderBenchZone();
-  _renderTeamStats();
-  _bindGameControls();
-  _updateCountdown();
+  _renderSoccerScoreboard();
+  _renderSoccerTimerPanel();
+  _renderSoccerFieldZone();
+  _renderSoccerBenchZone();
+  _renderRotationQueue();
+  _renderSoccerTeamStats();
+  _bindSoccerGameControls();
+  _setupQueueChannel();
 }
 
 function _getFieldPlayers() {
@@ -614,33 +603,141 @@ function _getPlayedTime(ps) {
   return ps.totalOnTime + ps.currentStint;
 }
 
-function _renderFieldZone() {
-  const zone = _gs.container.querySelector('#field-zone');
+function _renderSoccerScoreboard() {
+  const zone = _gs.container?.querySelector('#scoreboard');
   if (!zone) return;
-
-  const fieldPlayers = _getFieldPlayers();
-  const count = fieldPlayers.length;
-
-  let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
-  for (const ps of fieldPlayers) {
-    html += `
-      <div class="player-chip" data-player-id="${ps.id}">
-        <span>${_esc(ps.name)}</span>
-        <span class="chip-time">${_fmt(ps.currentStint)}</span>
+  const us = _gs.score?.us || 0;
+  const opp = _gs.score?.opp || 0;
+  const teamName = _gs.team?.name ? _esc(_gs.team.name) : 'US';
+  const oppName = _gs.game?.opponent ? _esc(_gs.game.opponent) : 'OPP';
+  zone.innerHTML = `
+    <div class="score-side score-us">
+      <div class="score-label">${teamName}</div>
+      <div class="score-value">${us}</div>
+      <div class="score-bumps">
+        <button class="score-bump" data-team="us" data-delta="-1" ${us <= 0 ? 'disabled' : ''}>−1</button>
+        <button class="score-bump" data-team="us" data-delta="1">+1</button>
       </div>
-    `;
-  }
-  zone.innerHTML = html;
-
-  // Bind field player clicks (for individual swap)
-  zone.querySelectorAll('.player-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      _handleFieldPlayerTap(chip.dataset.playerId);
+    </div>
+    <div class="score-divider">—</div>
+    <div class="score-side score-opp">
+      <div class="score-label">${oppName}</div>
+      <div class="score-value">${opp}</div>
+      <div class="score-bumps">
+        <button class="score-bump" data-team="opp" data-delta="-1" ${opp <= 0 ? 'disabled' : ''}>−1</button>
+        <button class="score-bump" data-team="opp" data-delta="1">+1</button>
+      </div>
+    </div>
+  `;
+  zone.querySelectorAll('.score-bump').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _adjustScore(btn.dataset.team, parseInt(btn.dataset.delta, 10));
     });
   });
 }
 
-function _renderBenchZone() {
+function _renderSoccerTimerPanel() {
+  const zone = _gs.container?.querySelector('#timer-panel');
+  if (!zone) return;
+  const interval = _gs.alertInterval || 0;
+  const cycleStart = _gs.lastAlertAt || 0;
+  const elapsedInCycle = Math.max(0, _gs.timerSeconds - cycleStart);
+  const remaining = interval > 0 ? interval - elapsedInCycle : 0;
+  const overdue = remaining <= 0;
+  const display = overdue
+    ? '+' + _fmt(Math.abs(remaining))
+    : _fmt(remaining);
+  const intervalLabel = interval > 0 ? Math.round(interval / 60) + ' MIN' : '— MIN';
+
+  zone.innerHTML = `
+    <div class="timer-row">
+      <div class="timer-meta">
+        <div class="timer-label">NEXT ROTATION</div>
+        <div class="timer-interval" id="timer-interval-label">@ ${intervalLabel}</div>
+      </div>
+      <div class="timer-clock${_gs.timerRunning ? '' : ' paused'}${overdue ? ' overdue' : ''}" id="game-clock">${display}</div>
+    </div>
+    <div class="timer-controls">
+      <button class="timer-btn timer-btn-primary" id="btn-start-pause">${_gs.timerRunning ? 'PAUSE' : 'START'}</button>
+      <button class="timer-btn" id="btn-reset-cycle" title="Reset rotation timer">RESET</button>
+      <button class="timer-btn" id="btn-adjust-interval" title="Adjust rotation interval">ADJUST</button>
+    </div>
+  `;
+}
+
+function _renderSoccerFieldZone() {
+  const zone = _gs.container.querySelector('#field-zone');
+  if (!zone) return;
+  const fieldPlayers = _getFieldPlayers();
+  const count = fieldPlayers.length;
+
+  // "Next out" advances past any queued out
+  const queueOutSet = new Set(_gs.queueOut || []);
+  let nextOutId = null;
+  const sortedByPlayed = [...fieldPlayers].sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
+  for (const ps of sortedByPlayed) {
+    if (queueOutSet.has(ps.id)) continue;
+    if (_getPlayedTime(ps) > 0) { nextOutId = ps.id; break; }
+  }
+
+  const editable = !_gs.watchMode;
+
+  let html = '<div class="zone-title">ON FIELD (' + count + '/' + _gs.fieldSize + ')</div>';
+  html += '<div class="ff-grid">';
+  for (const ps of fieldPlayers) {
+    const played = _getPlayedTime(ps);
+    const sat = _getBenchWait(ps);
+    const goals = _gs.tds?.[ps.id] || 0;
+    const isQueued = queueOutSet.has(ps.id);
+    const isSuggestedOut = !isQueued && ps.id === nextOutId;
+
+    let cls = 'ff-cell field';
+    if (isQueued) cls += ' queued-out';
+    else if (isSuggestedOut) cls += ' suggest-out';
+
+    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
+    if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
+    else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
+
+    const goalAction = editable
+      ? `<button class="ff-card-stat-btn" data-player-id="${ps.id}" data-stat="goal">🥅 ${goals}</button>`
+      : `<div class="ff-cell-events">🥅 ${goals}</div>`;
+
+    html += `
+      <div class="${cls}" data-player-id="${ps.id}">
+        ${hint}
+        <div class="ff-cell-body">
+          <div class="ff-cell-info">
+            <div class="ff-name">${_esc(ps.name)}</div>
+          </div>
+          <div class="ff-cell-meta">
+            <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${_fmt(played)}</span><span class="ff-stat-pill ff-stat-off">🪑 ${_fmt(sat)}</span></div>
+            ${editable ? `<div class="ff-card-stat-actions">${goalAction}</div>` : goalAction}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  html += '</div>';
+  zone.innerHTML = html;
+
+  if (editable) {
+    zone.querySelectorAll('.ff-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        _handleFieldPlayerTap(cell.dataset.playerId);
+      });
+    });
+    zone.querySelectorAll('.ff-card-stat-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        _bumpPlayerStat(btn.dataset.playerId, btn.dataset.stat);
+      });
+    });
+  }
+}
+
+function _renderSoccerBenchZone() {
   const zone = _gs.container.querySelector('#bench-zone');
   if (!zone) return;
 
@@ -649,67 +746,198 @@ function _renderBenchZone() {
     .sort((a, b) => _getBenchWait(b) - _getBenchWait(a));
   const count = benchPlayers.length;
 
-  let html = '<div class="zone-title">BENCH (' + count + ')</div>';
+  const queueInSet = new Set(_gs.queueIn || []);
+  let nextInId = null;
   for (const ps of benchPlayers) {
-    const currentWait = _gs.timerSeconds - ps.benchSince;
-    const isSelected = _gs.pendingBenchPlayer === ps.id;
+    if (queueInSet.has(ps.id)) continue;
+    if (_getBenchWait(ps) > 0) { nextInId = ps.id; break; }
+  }
+
+  const fieldCount = Object.values(_gs.players).filter(p => p.onField).length;
+  const autoCap = Math.min(count, fieldCount);
+  const autoDisabled = autoCap === 0 ? 'disabled' : '';
+  const autoBtn = _gs.watchMode ? '' : `<button class="zone-action zone-action-auto" id="btn-auto-rotate" ${autoDisabled} title="Suggest a rotation">⚡ AUTO</button>`;
+  const fieldBtn = _gs.watchMode ? '' : `<button class="zone-action" id="btn-adjust-field" title="Adjust on-field count">FIELD ${_gs.fieldSize}</button>`;
+  const addBtn = _gs.watchMode ? '' : '<button class="zone-action" id="btn-add-player">+ ADD</button>';
+
+  let html = '<div class="zone-title-row"><div class="zone-title">BENCH (' + count + ')</div><div class="zone-actions">' + autoBtn + fieldBtn + addBtn + '</div></div>';
+  html += '<div class="ff-grid">';
+  for (const ps of benchPlayers) {
+    const sat = _getBenchWait(ps);
+    const played = _getPlayedTime(ps);
+    const goals = _gs.tds?.[ps.id] || 0;
+    const isQueued = queueInSet.has(ps.id);
+    const isSuggestedIn = !isQueued && ps.id === nextInId;
+    let cls = 'ff-cell bench';
+    if (isQueued) cls += ' queued-in';
+    else if (isSuggestedIn) cls += ' suggest-in';
+    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
+    if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
+    else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
     html += `
-      <div class="bench-player${isSelected ? ' selected' : ''}" data-player-id="${ps.id}">
-        <span class="bench-name">${_esc(ps.name)}</span>
-        <span class="bench-wait">${_fmt(currentWait)}</span>
+      <div class="${cls}" data-player-id="${ps.id}">
+        ${hint}
+        <div class="ff-cell-body">
+          <div class="ff-cell-info">
+            <div class="ff-name">${_esc(ps.name)}</div>
+          </div>
+          <div class="ff-cell-meta">
+            <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${_fmt(played)}</span><span class="ff-stat-pill ff-stat-off">🪑 ${_fmt(sat)}</span></div>
+            <div class="ff-cell-events">🥅 ${goals}</div>
+          </div>
+        </div>
       </div>
     `;
   }
+  html += '</div>';
   zone.innerHTML = html;
 
-  // Bind bench player clicks
-  zone.querySelectorAll('.bench-player').forEach(row => {
-    row.addEventListener('click', () => {
-      _handleBenchPlayerTap(row.dataset.playerId);
+  if (!_gs.watchMode) {
+    zone.querySelectorAll('.ff-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        _handleBenchPlayerTap(cell.dataset.playerId);
+      });
     });
-  });
+    zone.querySelector('#btn-add-player')?.addEventListener('click', _showAddPlayerModal);
+    zone.querySelector('#btn-auto-rotate')?.addEventListener('click', _autoFillRotationQueue);
+    zone.querySelector('#btn-adjust-field')?.addEventListener('click', _showFieldSizeAdjust);
+  }
 }
 
-function _renderTeamStats() {
-  const zone = _gs.container.querySelector('#team-stats');
+function _renderSoccerTeamStats() {
+  const zone = _gs.container?.querySelector('#team-stats');
   if (!zone) return;
-
+  const editable = !_gs.watchMode;
   const allPlayers = Object.values(_gs.players)
     .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
 
   let html = '<div class="zone-title">PLAYER STATS</div>';
-  html += '<div class="stats-header"><span class="stats-name-header">Player</span><span class="stats-col-header">Played</span><span class="stats-col-header">Benched</span></div>';
+  html += `
+    <div class="ff-stats-table soccer-stats-table">
+      <div class="ff-stats-th ff-stats-th-name">Player</div>
+      <div class="ff-stats-th">P/S</div>
+      <div class="ff-stats-th">🥅</div>
+  `;
   for (const ps of allPlayers) {
     const played = _getPlayedTime(ps);
     const benched = _getBenchWait(ps);
+    const goals = _gs.tds?.[ps.id] || 0;
+    const dot = ps.onField ? '<span class="ff-on-dot" title="on field"></span>' : '';
+    const goalCell = editable
+      ? `<button class="ff-stat-action" data-player-id="${ps.id}" data-stat="goal"><span class="ff-stat-num">${goals}</span><span class="ff-stat-plus">+1</span></button>`
+      : `<span class="ff-stat-num">${goals}</span>`;
     html += `
-      <div class="stats-row" data-player-id="${ps.id}">
-        <span class="stats-name">${_esc(ps.name)}</span>
-        <span class="stats-played">${_fmt(played)}</span>
-        <span class="stats-benched">${_fmt(benched)}</span>
-      </div>
+      <div class="ff-stats-td-name">${dot}${_esc(ps.name)}</div>
+      <div class="ff-stats-td-time"><span class="ff-stat-on">${_fmt(played)}</span>/<span class="ff-stat-off">${_fmt(benched)}</span></div>
+      <div class="ff-stats-td">${goalCell}</div>
     `;
   }
+  html += '</div>';
   zone.innerHTML = html;
+
+  if (editable) {
+    zone.querySelectorAll('.ff-stat-action').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        _bumpPlayerStat(btn.dataset.playerId, btn.dataset.stat);
+      });
+    });
+  }
 }
 
-function _bindGameControls() {
+function _bindSoccerGameControls() {
   const c = _gs.container;
-
-  // Start/Pause
-  c.querySelector('#btn-start-pause')?.addEventListener('click', _handleStartPause);
-
-  // End game
   c.querySelector('#btn-end-game')?.addEventListener('click', _handleEndGame);
+  c.querySelector('#btn-share-watch')?.addEventListener('click', _shareWatchLink);
+  _bindSoccerTimerControls();
+}
 
-  // Rotate button
-  c.querySelector('#btn-rotate')?.addEventListener('click', () => _showSwapPreview(false));
+function _bindSoccerTimerControls() {
+  const c = _gs.container;
+  c.querySelector('#btn-start-pause')?.addEventListener('click', _handleStartPause);
+  c.querySelector('#btn-reset-cycle')?.addEventListener('click', _handleResetCycle);
+  c.querySelector('#btn-adjust-interval')?.addEventListener('click', _showIntervalAdjust);
+}
 
-  // Confirm rotation
-  c.querySelector('#btn-confirm-rotate')?.addEventListener('click', _handleConfirmRotation);
+function _handleResetCycle() {
+  _gs.lastAlertAt = _gs.timerSeconds;
+  _gs.alertFired = false;
+  _renderSoccerTimerPanel();
+  _bindSoccerTimerControls();
+  _saveCrashRecovery();
+}
 
-  // Cancel rotation
-  c.querySelector('#btn-cancel-rotate')?.addEventListener('click', _hideSwapPreview);
+function _showIntervalAdjust() {
+  const existing = document.getElementById('ctb-interval-overlay');
+  if (existing) { existing.remove(); return; }
+  const minutes = Math.max(1, Math.round((_gs.alertInterval || 180) / 60));
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'ctb-interval-overlay';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-title">Rotation interval</div>
+      <div class="modal-stepper">
+        <button class="stepper-btn" id="int-down">−</button>
+        <div class="stepper-value" id="int-val">${minutes}<span class="stepper-unit">min</span></div>
+        <button class="stepper-btn" id="int-up">+</button>
+      </div>
+      <button class="btn-primary" id="int-save">Save</button>
+      <div class="modal-cancel" id="int-close">Close</div>
+    </div>
+  `;
+  document.getElementById('app').appendChild(overlay);
+  let cur = minutes;
+  const valEl = overlay.querySelector('#int-val');
+  const refresh = () => { valEl.firstChild.nodeValue = String(cur); };
+  overlay.querySelector('#int-down').addEventListener('click', () => { cur = Math.max(1, cur - 1); refresh(); });
+  overlay.querySelector('#int-up').addEventListener('click', () => { cur = Math.min(15, cur + 1); refresh(); });
+  overlay.querySelector('#int-save').addEventListener('click', () => {
+    _gs.alertInterval = cur * 60;
+    _renderSoccerTimerPanel();
+    _bindSoccerTimerControls();
+    overlay.remove();
+    _saveCrashRecovery();
+  });
+  overlay.querySelector('#int-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+function _showFieldSizeAdjust() {
+  const existing = document.getElementById('ctb-field-overlay');
+  if (existing) { existing.remove(); return; }
+  const onField = Object.values(_gs.players).filter(p => p.onField).length;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'ctb-field-overlay';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-title">Players on field</div>
+      <div class="modal-stepper">
+        <button class="stepper-btn" id="fs-down">−</button>
+        <div class="stepper-value" id="fs-val">${_gs.fieldSize}</div>
+        <button class="stepper-btn" id="fs-up">+</button>
+      </div>
+      <div class="modal-hint">Currently on field: ${onField}</div>
+      <button class="btn-primary" id="fs-save">Save</button>
+      <div class="modal-cancel" id="fs-close">Close</div>
+    </div>
+  `;
+  document.getElementById('app').appendChild(overlay);
+  let cur = _gs.fieldSize;
+  const valEl = overlay.querySelector('#fs-val');
+  const refresh = () => { valEl.textContent = String(cur); };
+  overlay.querySelector('#fs-down').addEventListener('click', () => { cur = Math.max(1, cur - 1); refresh(); });
+  overlay.querySelector('#fs-up').addEventListener('click', () => { cur = Math.min(11, cur + 1); refresh(); });
+  overlay.querySelector('#fs-save').addEventListener('click', () => {
+    _gs.fieldSize = cur;
+    _renderSoccerFieldZone();
+    _renderSoccerBenchZone();
+    overlay.remove();
+    _saveCrashRecovery();
+  });
+  overlay.querySelector('#fs-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 }
 
 async function _handleStartPause() {
@@ -730,7 +958,6 @@ async function _handleStartPause() {
     _gs.wallAnchor = null;
     _gs.timerAnchor = null;
     _releaseWakeLock();
-    _updateClockDisplay();
     _saveCrashRecovery();
   } else {
     // Unlock audio on user gesture (iOS requires this)
@@ -745,13 +972,12 @@ async function _handleStartPause() {
     _gs.timerRunning = true;
     _startTimerInterval();
     _requestWakeLock();
-    _updateClockDisplay();
     _saveCrashRecovery();
   }
 
-  // Update button text
-  const btn = _gs.container.querySelector('#btn-start-pause');
-  if (btn) btn.textContent = _gs.timerRunning ? 'PAUSE' : 'START';
+  // Re-render the timer panel so the button label and clock state reflect run state.
+  _renderSoccerTimerPanel();
+  _bindSoccerTimerControls();
 }
 
 function _startTimerInterval() {
@@ -800,393 +1026,83 @@ function _startTimerInterval() {
 }
 
 function _updateClockDisplay() {
-  const clock = _gs.container.querySelector('#game-clock');
-  const dot = _gs.container.querySelector('#timer-dot');
-  if (clock) {
-    clock.textContent = _fmt(_gs.timerSeconds);
-    if (_gs.timerRunning) {
-      clock.classList.remove('paused');
-    } else {
-      clock.classList.add('paused');
-    }
-  }
-  if (dot) {
-    if (_gs.timerRunning) {
-      dot.classList.remove('stopped');
-    } else {
-      dot.classList.add('stopped');
-    }
-  }
+  // Soccer's clock display lives inside the timer panel, which is updated
+  // surgically in _updatePlayerTimes. Football has no game clock.
 }
 
 function _updatePlayerTimes() {
-  // Update field player stint times
+  if (_isFootball()) return; // football has no per-second clock
+
+  // Surgical update of stat pills on field/bench/team-stats so we don't
+  // rip out tap-targets each second.
   const fieldZone = _gs.container.querySelector('#field-zone');
   if (fieldZone) {
-    fieldZone.querySelectorAll('.player-chip').forEach(chip => {
-      const ps = _gs.players[chip.dataset.playerId];
-      if (ps) {
-        const timeEl = chip.querySelector('.chip-time');
-        if (timeEl) timeEl.textContent = _fmt(ps.currentStint);
-      }
+    fieldZone.querySelectorAll('.ff-cell').forEach(cell => {
+      const ps = _gs.players[cell.dataset.playerId];
+      if (!ps) return;
+      const onEl = cell.querySelector('.ff-stat-on');
+      const offEl = cell.querySelector('.ff-stat-off');
+      if (onEl) onEl.textContent = '🏃 ' + _fmt(_getPlayedTime(ps));
+      if (offEl) offEl.textContent = '🪑 ' + _fmt(_getBenchWait(ps));
     });
   }
-
-  // Update bench player wait times (current stint only)
   const benchZone = _gs.container.querySelector('#bench-zone');
   if (benchZone) {
-    benchZone.querySelectorAll('.bench-player').forEach(row => {
-      const ps = _gs.players[row.dataset.playerId];
-      if (ps) {
-        const waitEl = row.querySelector('.bench-wait');
-        if (waitEl) waitEl.textContent = _fmt(_gs.timerSeconds - ps.benchSince);
-      }
+    benchZone.querySelectorAll('.ff-cell').forEach(cell => {
+      const ps = _gs.players[cell.dataset.playerId];
+      if (!ps) return;
+      const onEl = cell.querySelector('.ff-stat-on');
+      const offEl = cell.querySelector('.ff-stat-off');
+      if (onEl) onEl.textContent = '🏃 ' + _fmt(_getPlayedTime(ps));
+      if (offEl) offEl.textContent = '🪑 ' + _fmt(_getBenchWait(ps));
     });
   }
-
-  // Update team stats
   const statsZone = _gs.container.querySelector('#team-stats');
   if (statsZone) {
-    statsZone.querySelectorAll('.stats-row').forEach(row => {
-      const ps = _gs.players[row.dataset.playerId];
-      if (ps) {
-        const playedEl = row.querySelector('.stats-played');
-        if (playedEl) playedEl.textContent = _fmt(_getPlayedTime(ps));
-        const benchedEl = row.querySelector('.stats-benched');
-        if (benchedEl) benchedEl.textContent = _fmt(_getBenchWait(ps));
-      }
+    const rows = statsZone.querySelectorAll('.ff-stats-td-time');
+    let i = 0;
+    const allPlayers = Object.values(_gs.players)
+      .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
+    rows.forEach(row => {
+      const ps = allPlayers[i++];
+      if (!ps) return;
+      const onEl = row.querySelector('.ff-stat-on');
+      const offEl = row.querySelector('.ff-stat-off');
+      if (onEl) onEl.textContent = _fmt(_getPlayedTime(ps));
+      if (offEl) offEl.textContent = _fmt(_getBenchWait(ps));
     });
   }
 
-  // Update rotation countdown
-  _updateCountdown();
-
-  // Update swap preview if it's open (live timing)
-  _updatePreviewTimes();
+  _updateSoccerTimerClock();
 }
 
-function _updateCountdown() {
-  const el = _gs.container.querySelector('#rotation-countdown');
-  if (!el) return;
-
-  if (!_gs.timerRunning || _gs.alertInterval <= 0) {
-    el.textContent = '';
-    return;
-  }
-
-  const benchCount = Object.values(_gs.players).filter(p => !p.onField).length;
-  if (benchCount === 0) {
-    el.textContent = '';
-    return;
-  }
-
-  const elapsed = _gs.timerSeconds - _gs.lastAlertAt;
-  const remaining = _gs.alertInterval - elapsed;
-  if (remaining > 0) {
-    el.textContent = 'Next rotation in ' + _fmt(remaining);
-    el.classList.remove('overdue');
-  } else {
-    el.textContent = 'OVERDUE +' + _fmt(Math.abs(remaining));
-    el.classList.add('overdue');
-  }
-}
-
-function _updatePreviewTimes() {
-  const overlay = _gs.container.querySelector('#swap-preview');
-  if (!overlay || overlay.style.display === 'none') return;
-  if (!_gs.proposedSwaps) return;
-
-  // Update countdown inside the preview
-  const cdEl = _gs.container.querySelector('#preview-countdown');
-  if (cdEl && _gs.alertInterval > 0) {
-    const elapsed = _gs.timerSeconds - _gs.lastAlertAt;
-    const remaining = _gs.alertInterval - elapsed;
-    if (remaining > 0) {
-      cdEl.textContent = 'Rotation in ' + _fmt(remaining);
-      cdEl.className = 'preview-countdown';
-    } else {
-      cdEl.textContent = 'OVERDUE +' + _fmt(Math.abs(remaining));
-      cdEl.className = 'preview-countdown overdue';
-    }
-  }
-
-  // Update all player times in preview
-  const pairsEl = _gs.container.querySelector('#preview-pairs');
-  if (!pairsEl) return;
-
-  pairsEl.querySelectorAll('.preview-player-row').forEach(el => {
-    const pid = el.dataset.playerId || el.dataset.stayingId;
-    const ps = pid ? _gs.players[pid] : null;
-    if (!ps) return;
-    const timeEl = el.querySelector('.preview-time');
-    if (timeEl) timeEl.textContent = _fmt(_getPlayedTime(ps)) + ' played';
-  });
+function _updateSoccerTimerClock() {
+  const clock = _gs.container?.querySelector('#timer-panel .timer-clock');
+  if (!clock) return;
+  const interval = _gs.alertInterval || 0;
+  const cycleStart = _gs.lastAlertAt || 0;
+  const elapsed = Math.max(0, _gs.timerSeconds - cycleStart);
+  const remaining = interval > 0 ? interval - elapsed : 0;
+  const overdue = remaining <= 0;
+  clock.textContent = overdue ? '+' + _fmt(Math.abs(remaining)) : _fmt(remaining);
+  clock.classList.toggle('paused', !_gs.timerRunning);
+  clock.classList.toggle('overdue', overdue);
 }
 
 function _checkRotationAlert() {
+  if (_isFootball()) return;
   if (!_gs.timerRunning) return;
-  if (_gs.alertInterval <= 0) return;
+  if ((_gs.alertInterval || 0) <= 0) return;
 
   const benchCount = Object.values(_gs.players).filter(p => !p.onField).length;
   if (benchCount === 0) return;
 
-  const nextAlertAt = _gs.lastAlertAt + _gs.alertInterval;
-  const earlyWarning = 15; // seconds before interval to show preview
-
-  // Early warning: show preview 15s before rotation time (if not already showing)
-  if (!_gs.earlyAlertFired && _gs.timerSeconds >= nextAlertAt - earlyWarning && _gs.timerSeconds < nextAlertAt) {
-    _gs.earlyAlertFired = true;
-    _showSwapPreview(true);
-  }
-
-  // Full alert: at or past the interval — fire once, don't auto-advance lastAlertAt.
-  // lastAlertAt only resets when the coach actually performs a rotation.
-  // This keeps the OVERDUE counter ticking until the sub happens.
-  if (!_gs.fullAlertFired && _gs.timerSeconds >= nextAlertAt) {
-    _gs.fullAlertFired = true;
-    const overlay = _gs.container.querySelector('#swap-preview');
-    if (overlay && overlay.style.display === 'none') {
-      _showSwapPreview(true);
-    } else {
-      // Preview already open from early warning — just re-alert
-      _playAlertTone();
-      try { navigator.vibrate([200, 100, 200, 100, 200]); } catch (e) { /* ignore */ }
-    }
-  }
-}
-
-function _handleBenchPlayerTap(playerId) {
-  if (_isFootball()) {
-    // Football: toggle player in the "going in" rotation queue
-    const idx = _gs.queueIn.indexOf(playerId);
-    if (idx >= 0) _gs.queueIn.splice(idx, 1);
-    else _gs.queueIn.push(playerId);
-    _renderFootballBenchZone();
-    _renderFootballRotationQueue();
-    _broadcastQueue();
-    return;
-  }
-  if (_gs.pendingBenchPlayer === playerId) {
-    _gs.pendingBenchPlayer = null;
-  } else {
-    _gs.pendingBenchPlayer = playerId;
-  }
-  _renderBenchZone();
-}
-
-async function _handleFieldPlayerTap(fieldPlayerId) {
-  if (_isFootball()) {
-    // Football: toggle player in the "going out" rotation queue
-    const idx = _gs.queueOut.indexOf(fieldPlayerId);
-    if (idx >= 0) _gs.queueOut.splice(idx, 1);
-    else _gs.queueOut.push(fieldPlayerId);
-    _renderFootballFieldZone();
-    _renderFootballRotationQueue();
-    _broadcastQueue();
-    return;
-  }
-  if (!_gs.pendingBenchPlayer) return;
-
-  const benchId = _gs.pendingBenchPlayer;
-  const benchPs = _gs.players[benchId];
-  const fieldPs = _gs.players[fieldPlayerId];
-  if (!benchPs || !fieldPs) return;
-
-  const ts = _gs.timerSeconds;
-
-  // Insert events
-  await db_insertEvent({ gameId: _gs.game.id, playerId: fieldPlayerId, eventType: 'sub_off', timestamp: ts });
-  await db_insertEvent({ gameId: _gs.game.id, playerId: benchId, eventType: 'sub_on', timestamp: ts });
-
-  // Update field player -> bench
-  fieldPs.totalOnTime += Math.max(0, ts - (fieldPs.fieldEnteredAt || 0));
-  fieldPs.onField = false;
-  fieldPs.fieldEnteredAt = null;
-  fieldPs.currentStint = 0;
-  fieldPs.benchSince = ts;
-
-  // Update bench player -> field
-  benchPs.totalBenchTime += Math.max(0, ts - benchPs.benchSince);
-  benchPs.onField = true;
-  benchPs.fieldEnteredAt = ts;
-  benchPs.currentStint = 0;
-
-  // Store for undo
-  _gs.lastSwap = {
-    type: 'individual',
-    count: 2,
-    pairs: [{ benchId, fieldId: fieldPlayerId }],
-  };
-  _gs.pendingBenchPlayer = null;
-
-  // Reset countdown so next rotation gets full interval (soccer only)
-  _gs.lastAlertAt = ts;
-  _gs.earlyAlertFired = false;
-  _gs.fullAlertFired = false;
-
-  if (_isFootball()) {
-    _renderFootballFieldZone();
-    _renderFootballBenchZone();
-    _renderFootballTeamStats();
-  } else {
-    _renderFieldZone();
-    _renderBenchZone();
-    _renderTeamStats();
-  }
-  _saveCrashRecovery();
-
-  _showUndoToast('Swapped ' + benchPs.name + ' \u2192 ' + fieldPs.name, _handleUndo);
-}
-
-function _calculateProposedSwaps() {
-  // Equity-based ordering:
-  // Field sorted most-played first → they come out first
-  // Bench sorted least-played first → they go in first (need the most time)
-  const field = Object.values(_gs.players)
-    .filter(p => p.onField)
-    .sort((a, b) => _getPlayedTime(b) - _getPlayedTime(a));
-
-  const bench = Object.values(_gs.players)
-    .filter(p => !p.onField)
-    .sort((a, b) => _getPlayedTime(a) - _getPlayedTime(b));
-
-  // Always swap min(bench, field) — everyone on bench should get a turn.
-  // The equity is in the ORDER, not in whether to swap.
-  const swapCount = Math.min(bench.length, field.length);
-  const pairs = [];
-  for (let i = 0; i < swapCount; i++) {
-    pairs.push({ out: field[i], in: bench[i] });
-  }
-
-  // Unmatched extras on whichever side has more
-  const stayingField = field.slice(swapCount);
-  const stayingBench = bench.slice(swapCount);
-
-  return { pairs, stayingField, stayingBench };
-}
-
-function _showSwapPreview(isAlert) {
-  // Use existing edited swaps if available (from staying player trades), otherwise calculate fresh
-  const result = (!isAlert && _gs.proposedSwaps) ? _gs.proposedSwaps : _calculateProposedSwaps();
-  if (result.pairs.length === 0) {
-    _showToast('No bench players to rotate');
-    return;
-  }
-
-  _gs.proposedSwaps = result;
-
-  const pairsEl = _gs.container.querySelector('#preview-pairs');
-  let html = '';
-
-  // ── COMING OUT section ──
-  html += '<div class="preview-section-title out-title">COMING OUT</div>';
-  for (let i = 0; i < result.pairs.length; i++) {
-    const p = result.pairs[i];
-    html += `
-      <div class="preview-player-row out" data-swap-idx="${i}" data-side="out" data-player-id="${p.out.id}">
-        <span class="preview-name">${_esc(p.out.name)}</span>
-        <span class="preview-time">${_fmt(_getPlayedTime(p.out))} played</span>
-      </div>
-    `;
-  }
-
-  // Staying on field (if field has more than bench)
-  if (result.stayingField.length > 0) {
-    html += '<div class="preview-staying-title">STAYING ON FIELD</div>';
-    for (const ps of result.stayingField) {
-      html += `
-        <div class="preview-player-row staying" data-staying-id="${ps.id}" data-staying-side="field">
-          <span class="preview-name">${_esc(ps.name)}</span>
-          <span class="preview-time">${_fmt(_getPlayedTime(ps))} played</span>
-        </div>
-      `;
-    }
-  }
-
-  // ── COMING IN section ──
-  html += '<div class="preview-section-title in-title">COMING IN</div>';
-  for (let i = 0; i < result.pairs.length; i++) {
-    const p = result.pairs[i];
-    html += `
-      <div class="preview-player-row in" data-swap-idx="${i}" data-side="in" data-player-id="${p.in.id}">
-        <span class="preview-name">${_esc(p.in.name)}</span>
-        <span class="preview-time">${_fmt(_getPlayedTime(p.in))} played</span>
-      </div>
-    `;
-  }
-
-  // Staying on bench (if bench has more than field)
-  if (result.stayingBench.length > 0) {
-    html += '<div class="preview-staying-title">STAYING ON BENCH</div>';
-    for (const ps of result.stayingBench) {
-      html += `
-        <div class="preview-player-row staying" data-staying-id="${ps.id}" data-staying-side="bench">
-          <span class="preview-name">${_esc(ps.name)}</span>
-          <span class="preview-time">${_fmt(_getPlayedTime(ps))} played</span>
-        </div>
-      `;
-    }
-  }
-
-  pairsEl.innerHTML = html;
-
-  // ── Staying ↔ swapping trade interaction ──
-  // Tap a staying player to select, then tap a swapping player on the same
-  // side (out=field, in=bench) to trade who participates in the rotation.
-  _gs.pendingStaying = null;
-
-  pairsEl.querySelectorAll('.preview-player-row.staying').forEach(el => {
-    el.addEventListener('click', () => {
-      pairsEl.querySelectorAll('.preview-player-row').forEach(s => s.classList.remove('selected'));
-      if (_gs.pendingStaying === el.dataset.stayingId) {
-        _gs.pendingStaying = null;
-      } else {
-        _gs.pendingStaying = el.dataset.stayingId;
-        el.classList.add('selected');
-      }
-    });
-  });
-
-  pairsEl.querySelectorAll('.preview-player-row.out, .preview-player-row.in').forEach(el => {
-    el.addEventListener('click', () => {
-      if (!_gs.pendingStaying) return;
-      const stayingPs = _gs.players[_gs.pendingStaying];
-      if (!stayingPs) return;
-      const idx = parseInt(el.dataset.swapIdx);
-      const pair = _gs.proposedSwaps.pairs[idx];
-      if (!pair) return;
-
-      const stayingSide = stayingPs.onField ? 'field' : 'bench';
-      const clickedSide = el.dataset.side; // "out" or "in"
-
-      // Only allow trade within the same side: field-staying ↔ out, bench-staying ↔ in
-      if ((stayingSide === 'field' && clickedSide === 'out') ||
-          (stayingSide === 'bench' && clickedSide === 'in')) {
-        if (stayingSide === 'field') {
-          const oldOut = pair.out;
-          _gs.proposedSwaps.stayingField = _gs.proposedSwaps.stayingField.filter(p => p.id !== stayingPs.id);
-          _gs.proposedSwaps.stayingField.push(oldOut);
-          pair.out = stayingPs;
-        } else {
-          const oldIn = pair.in;
-          _gs.proposedSwaps.stayingBench = _gs.proposedSwaps.stayingBench.filter(p => p.id !== stayingPs.id);
-          _gs.proposedSwaps.stayingBench.push(oldIn);
-          pair.in = stayingPs;
-        }
-        _gs.pendingStaying = null;
-        _showSwapPreview(false);
-      }
-    });
-  });
-
-  const overlay = _gs.container.querySelector('#swap-preview');
-  if (overlay) overlay.style.display = '';
-
-  if (isAlert) {
-    try { navigator.vibrate([200, 100, 200, 100, 200]); } catch (e) { /* ignore */ }
+  const elapsed = _gs.timerSeconds - (_gs.lastAlertAt || 0);
+  if (elapsed >= _gs.alertInterval && !_gs.alertFired) {
+    _gs.alertFired = true;
     _playAlertTone();
-    // Flash the screen border for visibility
-    const screen = _gs.container.querySelector('.screen');
+    try { navigator.vibrate([200, 100, 200, 100, 200]); } catch (e) { /* ignore */ }
+    const screen = _gs.container?.querySelector('.screen');
     if (screen) {
       screen.classList.add('alert-flash');
       setTimeout(() => screen.classList.remove('alert-flash'), 2000);
@@ -1194,80 +1110,30 @@ function _showSwapPreview(isAlert) {
   }
 }
 
-function _hideSwapPreview() {
-  _gs.proposedSwaps = null;
-  _gs.pendingStaying = null;
-  // Don't reset alert flags on cancel — they'll re-trigger if still overdue
-  const overlay = _gs.container.querySelector('#swap-preview');
-  if (overlay) overlay.style.display = 'none';
+function _handleBenchPlayerTap(playerId) {
+  const idx = _gs.queueIn.indexOf(playerId);
+  if (idx >= 0) _gs.queueIn.splice(idx, 1);
+  else _gs.queueIn.push(playerId);
+  if (_isFootball()) {
+    _renderFootballBenchZone();
+  } else {
+    _renderSoccerBenchZone();
+  }
+  _renderRotationQueue();
+  _broadcastQueue();
 }
 
-async function _handleConfirmRotation() {
-  // Use the (possibly user-edited) proposed swaps, or recalculate if missing
-  const result = _gs.proposedSwaps || _calculateProposedSwaps();
-  const pairs = result.pairs || result;
-  if (pairs.length === 0) return;
-
-  _hideSwapPreview();
-
-  const ts = _gs.timerSeconds;
-  const swapPairs = [];
-
-  for (const pair of pairs) {
-    await db_insertEvent({ gameId: _gs.game.id, playerId: pair.out.id, eventType: 'sub_off', timestamp: ts });
-    await db_insertEvent({ gameId: _gs.game.id, playerId: pair.in.id, eventType: 'sub_on', timestamp: ts });
-
-    pair.out.totalOnTime += Math.max(0, ts - (pair.out.fieldEnteredAt || 0));
-    pair.out.onField = false;
-    pair.out.fieldEnteredAt = null;
-    pair.out.currentStint = 0;
-    pair.out.benchSince = ts;
-
-    pair.in.totalBenchTime += Math.max(0, ts - pair.in.benchSince);
-    pair.in.onField = true;
-    pair.in.fieldEnteredAt = ts;
-    pair.in.currentStint = 0;
-
-    swapPairs.push({ benchId: pair.in.id, fieldId: pair.out.id });
+function _handleFieldPlayerTap(fieldPlayerId) {
+  const idx = _gs.queueOut.indexOf(fieldPlayerId);
+  if (idx >= 0) _gs.queueOut.splice(idx, 1);
+  else _gs.queueOut.push(fieldPlayerId);
+  if (_isFootball()) {
+    _renderFootballFieldZone();
+  } else {
+    _renderSoccerFieldZone();
   }
-
-  _gs.lastSwap = { type: 'swap_all', count: pairs.length * 2, pairs: swapPairs };
-
-  // Reset countdown so next rotation gets full interval from now
-  _gs.lastAlertAt = ts;
-  _gs.earlyAlertFired = false;
-  _gs.fullAlertFired = false;
-
-  _renderFieldZone();
-  _renderBenchZone();
-  _renderTeamStats();
-  _saveCrashRecovery();
-
-  _showUndoToast('Rotated ' + pairs.length + ' players', _handleUndo);
-}
-
-async function _handleUndo() {
-  if (!_gs.lastSwap) return;
-
-  const count = _gs.lastSwap.count;
-  const ok = await db_deleteRecentEvents(_gs.game.id, count);
-  if (!ok) {
-    _showToast('Undo failed');
-    return;
-  }
-
-  _gs.lastSwap = null;
-
-  // Re-initialize from events (simplest correct approach)
-  const gameId = _gs.game.id;
-  const coach = _gs.coach;
-  const team = _gs.team;
-  const season = _gs.season;
-  clearInterval(_gs.timerInterval);
-  _releaseWakeLock();
-
-  router_navigate('game', { gameId, coach, team, season });
-  _showToast('Swap undone');
+  _renderRotationQueue();
+  _broadcastQueue();
 }
 
 async function _handleEndGame() {
@@ -1339,7 +1205,7 @@ function _renderFootballGameScreen() {
   _renderFootballPlayAction();
   _renderFootballFieldZone();
   _renderFootballBenchZone();
-  _renderFootballRotationQueue();
+  _renderRotationQueue();
   _renderFootballTeamStats();
   _bindFootballGameControls();
   _setupQueueChannel();
@@ -1454,8 +1320,10 @@ async function _logFootballPlay() {
 
 async function _adjustPlayerStat(playerId, stat, delta) {
   if (!_gs?.game?.id || !playerId || (delta !== 1 && delta !== -1)) return;
-  const eventType = stat === 'td' ? 'score' : stat;     // 'carry' | 'flag_pull' | 'score' (TD)
-  const meta = stat === 'td' ? { team: 'us', delta } : { delta };
+  // 'goal' is the soccer alias for 'td' — same event/score model as football TDs.
+  const isScoring = (stat === 'td' || stat === 'goal');
+  const eventType = isScoring ? 'score' : stat; // 'carry' | 'flag_pull' | 'score'
+  const meta = isScoring ? { team: 'us', delta } : { delta };
 
   if (stat === 'carry') {
     const cur = _gs.carries[playerId] || 0;
@@ -1465,7 +1333,7 @@ async function _adjustPlayerStat(playerId, stat, delta) {
     const cur = _gs.pulls[playerId] || 0;
     if (delta < 0 && cur <= 0) return;
     _gs.pulls[playerId] = Math.max(0, cur + delta);
-  } else if (stat === 'td') {
+  } else if (isScoring) {
     const cur = _gs.tds[playerId] || 0;
     if (delta < 0 && cur <= 0) return;
     _gs.tds[playerId] = Math.max(0, cur + delta);
@@ -1484,10 +1352,17 @@ async function _adjustPlayerStat(playerId, stat, delta) {
 
   try { navigator.vibrate(15); } catch (e) { /* ignore */ }
 
-  if (stat === 'td') _renderFootballScoreboard();
-  _renderFootballFieldZone();
-  _renderFootballBenchZone();
-  _renderFootballTeamStats();
+  if (_isFootball()) {
+    if (isScoring) _renderFootballScoreboard();
+    _renderFootballFieldZone();
+    _renderFootballBenchZone();
+    _renderFootballTeamStats();
+  } else {
+    if (isScoring) _renderSoccerScoreboard();
+    _renderSoccerFieldZone();
+    _renderSoccerBenchZone();
+    _renderSoccerTeamStats();
+  }
   _saveCrashRecovery();
 }
 
@@ -1509,7 +1384,8 @@ async function _adjustScore(team, delta) {
 
   try { navigator.vibrate(15); } catch (e) { /* ignore */ }
 
-  _renderFootballScoreboard();
+  if (_isFootball()) _renderFootballScoreboard();
+  else _renderSoccerScoreboard();
 }
 
 function _setupQueueChannel() {
@@ -1536,7 +1412,7 @@ function _broadcastQueue() {
   } catch (e) { /* ignore */ }
 }
 
-function _renderFootballRotationQueue() {
+function _renderRotationQueue() {
   const zone = _gs.container?.querySelector('#rotation-queue');
   if (!zone) return;
 
@@ -1558,12 +1434,12 @@ function _renderFootballRotationQueue() {
   const inHTML = inIds.map(id => itemHTML(id, 'in')).join('') || '<div class="queue-empty">— tap bench —</div>';
   const outHTML = outIds.map(id => itemHTML(id, 'out')).join('') || '<div class="queue-empty">— tap field —</div>';
 
-  const pairCount = Math.min(inIds.length, outIds.length);
+  const total = inIds.length + outIds.length;
   const actionBar = _gs.watchMode ? '' : `
     <div class="queue-actions">
       <button class="queue-clear" id="btn-clear-queue" title="Clear queue">CLEAR</button>
-      <button class="queue-rotate" id="btn-rotate-queue" ${pairCount === 0 ? 'disabled' : ''}>
-        ROTATE${pairCount > 0 ? ' &nbsp;·&nbsp; ' + pairCount + (pairCount === 1 ? ' pair' : ' pairs') : ''}
+      <button class="queue-rotate" id="btn-rotate-queue" ${total === 0 ? 'disabled' : ''}>
+        ROTATE${outIds.length > 0 || inIds.length > 0 ? ' &nbsp;·&nbsp; ' + outIds.length + ' off / ' + inIds.length + ' on' : ''}
       </button>
     </div>
   `;
@@ -1590,9 +1466,14 @@ function _renderFootballRotationQueue() {
     zone.querySelector('#btn-clear-queue')?.addEventListener('click', () => {
       _gs.queueIn = [];
       _gs.queueOut = [];
-      _renderFootballFieldZone();
-      _renderFootballBenchZone();
-      _renderFootballRotationQueue();
+      if (_isFootball()) {
+        _renderFootballFieldZone();
+        _renderFootballBenchZone();
+      } else {
+        _renderSoccerFieldZone();
+        _renderSoccerBenchZone();
+      }
+      _renderRotationQueue();
       _broadcastQueue();
     });
     zone.querySelector('#btn-rotate-queue')?.addEventListener('click', _executeQueueRotation);
@@ -1760,8 +1641,11 @@ function _autoFillRotationQueue() {
   if (_isFootball()) {
     _renderFootballFieldZone();
     _renderFootballBenchZone();
-    _renderFootballRotationQueue();
+  } else {
+    _renderSoccerFieldZone();
+    _renderSoccerBenchZone();
   }
+  _renderRotationQueue();
   _broadcastQueue();
 }
 
@@ -1920,7 +1804,10 @@ async function _bumpPlayerStat(playerId, stat) {
   const player = _gs.players[playerId];
   if (!player) return;
   await _adjustPlayerStat(playerId, stat, 1);
-  const emoji = stat === 'carry' ? '🏈' : stat === 'flag_pull' ? '🚩' : '🏆';
+  const emoji = stat === 'carry' ? '🏈'
+    : stat === 'flag_pull' ? '🚩'
+    : stat === 'goal' ? '🥅'
+    : '🏆';
   _showUndoToast(player.name + ' +' + emoji, () => {
     _adjustPlayerStat(playerId, stat, -1);
   });
@@ -2044,9 +1931,14 @@ router_register('watch', async (container, { gameId } = {}) => {
         if (!_gs || !_gs.watchMode) return;
         _gs.queueIn = Array.isArray(payload?.in) ? payload.in : [];
         _gs.queueOut = Array.isArray(payload?.out) ? payload.out : [];
-        _renderFootballRotationQueue();
-        _renderFootballFieldZone();
-        _renderFootballBenchZone();
+        _renderRotationQueue();
+        if (_isFootball()) {
+          _renderFootballFieldZone();
+          _renderFootballBenchZone();
+        } else {
+          _renderSoccerFieldZone();
+          _renderSoccerBenchZone();
+        }
       })
       .subscribe();
   } catch (e) { /* ignore — broadcast just won't update */ }
@@ -2113,7 +2005,7 @@ function _renderWatchScreen() {
   const isFootball = _isFootball();
   const opponent = _gs.game.opponent ? ' vs ' + _esc(_gs.game.opponent) : '';
 
-  const watchScoreboard = isFootball ? `
+  const watchScoreboard = `
     <div class="scoreboard watch">
       <div class="score-side score-us">
         <div class="score-label">${_esc(_gs.team?.name || 'US')}</div>
@@ -2125,7 +2017,7 @@ function _renderWatchScreen() {
         <div class="score-value">${_gs.score?.opp || 0}</div>
       </div>
     </div>
-  ` : '';
+  `;
 
   c.innerHTML = `
     <div class="screen">
@@ -2138,12 +2030,12 @@ function _renderWatchScreen() {
             <span class="spectator-dot"></span>
             <span>Live &mdash; ${_esc(_gs.team?.name || '')}${opponent}</span>
           </div>
-          ${isFootball ? '<div class="rotation-queue" id="rotation-queue"></div>' : ''}
+          <div class="rotation-queue" id="rotation-queue"></div>
         </div>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
-        ${isFootball ? watchScoreboard : ''}
-        ${isFootball ? '<div class="team-stats" id="team-stats"></div>' : ''}
+        ${watchScoreboard}
+        <div class="team-stats" id="team-stats"></div>
       </div>
     </div>
   `;
@@ -2151,40 +2043,41 @@ function _renderWatchScreen() {
   if (isFootball) {
     _renderFootballFieldZone();
     _renderFootballBenchZone();
-    _renderFootballRotationQueue();
     _renderFootballTeamStats();
   } else {
-    _renderFieldZone();
-    _renderBenchZone();
+    _renderSoccerFieldZone();
+    _renderSoccerBenchZone();
+    _renderSoccerTeamStats();
   }
+  _renderRotationQueue();
 }
 
 async function _executeQueueRotation() {
   if (!_gs) return;
-  const pairCount = Math.min(_gs.queueIn.length, _gs.queueOut.length);
-  if (pairCount === 0) return;
+  if (_gs.queueIn.length === 0 && _gs.queueOut.length === 0) return;
 
   const ts = _gs.timerSeconds;
-  for (let i = 0; i < pairCount; i++) {
-    const inId = _gs.queueIn[i];
-    const outId = _gs.queueOut[i];
-    const inPs = _gs.players[inId];
-    const outPs = _gs.players[outId];
-    if (!inPs || !outPs) continue;
 
+  // Process outs first so any size-growing rotations can fit.
+  for (const outId of _gs.queueOut) {
+    const ps = _gs.players[outId];
+    if (!ps || !ps.onField) continue;
     await db_insertEvent({ gameId: _gs.game.id, playerId: outId, eventType: 'sub_off', timestamp: ts });
+    ps.totalOnTime += Math.max(0, ts - (ps.fieldEnteredAt || 0));
+    ps.onField = false;
+    ps.fieldEnteredAt = null;
+    ps.currentStint = 0;
+    ps.benchSince = ts;
+  }
+
+  for (const inId of _gs.queueIn) {
+    const ps = _gs.players[inId];
+    if (!ps || ps.onField) continue;
     await db_insertEvent({ gameId: _gs.game.id, playerId: inId, eventType: 'sub_on', timestamp: ts });
-
-    outPs.totalOnTime += Math.max(0, ts - (outPs.fieldEnteredAt || 0));
-    outPs.onField = false;
-    outPs.fieldEnteredAt = null;
-    outPs.currentStint = 0;
-    outPs.benchSince = ts;
-
-    inPs.totalBenchTime += Math.max(0, ts - inPs.benchSince);
-    inPs.onField = true;
-    inPs.fieldEnteredAt = ts;
-    inPs.currentStint = 0;
+    ps.totalBenchTime += Math.max(0, ts - ps.benchSince);
+    ps.onField = true;
+    ps.fieldEnteredAt = ts;
+    ps.currentStint = 0;
   }
 
   _gs.queueIn = [];
@@ -2193,10 +2086,21 @@ async function _executeQueueRotation() {
 
   try { navigator.vibrate([30, 40, 30]); } catch (e) { /* ignore */ }
 
-  _renderFootballFieldZone();
-  _renderFootballBenchZone();
-  _renderFootballRotationQueue();
-  _renderFootballTeamStats();
+  if (_isFootball()) {
+    _renderFootballFieldZone();
+    _renderFootballBenchZone();
+    _renderFootballTeamStats();
+  } else {
+    // Soccer: rotating also resets the rotation cycle
+    _gs.lastAlertAt = ts;
+    _gs.alertFired = false;
+    _renderSoccerFieldZone();
+    _renderSoccerBenchZone();
+    _renderSoccerTeamStats();
+    _renderSoccerTimerPanel();
+    _bindSoccerTimerControls();
+  }
+  _renderRotationQueue();
   _saveCrashRecovery();
 }
 
