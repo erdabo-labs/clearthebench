@@ -592,11 +592,13 @@ function _renderGameScreen() {
               <div class="header-action" id="btn-end-game">END</div>
             </div>
           </div>
-          <div class="soccer-timer-panel" id="timer-panel"></div>
           <div class="rotation-queue" id="rotation-queue"></div>
         </div>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
+        <div class="soccer-bottom-controls">
+          <div class="soccer-timer-panel" id="timer-panel"></div>
+        </div>
         <div class="scoreboard" id="scoreboard"></div>
         <div class="team-stats" id="team-stats"></div>
       </div>
