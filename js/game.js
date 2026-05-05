@@ -13,6 +13,11 @@ function _fmt(seconds) {
   return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
 }
 
+function _fmtCardBucket(seconds) {
+  const mins = Math.max(0, Math.floor(seconds / 60));
+  return `${mins}m`;
+}
+
 function _showToast(message, duration = 3000) {
   const existing = document.querySelector('.ctb-toast');
   if (existing) existing.remove();
@@ -592,13 +597,15 @@ function _renderGameScreen() {
               <div class="header-action" id="btn-end-game">END</div>
             </div>
           </div>
-          <div class="soccer-timer-panel" id="timer-panel"></div>
           <div class="rotation-queue" id="rotation-queue"></div>
         </div>
         <div class="field-zone" id="field-zone"></div>
         <div class="bench-zone" id="bench-zone"></div>
         <div class="scoreboard" id="scoreboard"></div>
         <div class="team-stats" id="team-stats"></div>
+        <div class="soccer-bottom-controls">
+          <div class="soccer-timer-panel" id="timer-panel"></div>
+        </div>
       </div>
     </div>
   `;
@@ -740,7 +747,7 @@ function _renderSoccerFieldZone() {
         <div class="ff-cell-row">
           ${_hintColMarkup(hintState)}
           <div class="ff-cell-meta">
-            <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${_fmt(played)}</span><span class="ff-stat-pill ff-stat-off">🪑 ${_fmt(sat)}</span></div>
+            <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${_fmtCardBucket(played)}</span><span class="ff-stat-pill ff-stat-off">🪑 ${_fmtCardBucket(sat)}</span></div>
             ${editable ? `<div class="ff-card-stat-actions">${goalAction}</div>` : goalAction}
           </div>
         </div>
@@ -810,7 +817,7 @@ function _renderSoccerBenchZone() {
         <div class="ff-cell-row">
           ${_hintColMarkup(hintState)}
           <div class="ff-cell-meta">
-            <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${_fmt(played)}</span><span class="ff-stat-pill ff-stat-off">🪑 ${_fmt(sat)}</span></div>
+            <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${_fmtCardBucket(played)}</span><span class="ff-stat-pill ff-stat-off">🪑 ${_fmtCardBucket(sat)}</span></div>
           </div>
         </div>
       </div>
@@ -1071,8 +1078,8 @@ function _updatePlayerTimes() {
       if (!ps) return;
       const onEl = cell.querySelector('.ff-stat-on');
       const offEl = cell.querySelector('.ff-stat-off');
-      if (onEl) onEl.textContent = '🏃 ' + _fmt(_getPlayedTime(ps));
-      if (offEl) offEl.textContent = '🪑 ' + _fmt(_getBenchWait(ps));
+      if (onEl) onEl.textContent = '🏃 ' + _fmtCardBucket(_getPlayedTime(ps));
+      if (offEl) offEl.textContent = '🪑 ' + _fmtCardBucket(_getBenchWait(ps));
     });
   }
   const benchZone = _gs.container.querySelector('#bench-zone');
@@ -1082,8 +1089,8 @@ function _updatePlayerTimes() {
       if (!ps) return;
       const onEl = cell.querySelector('.ff-stat-on');
       const offEl = cell.querySelector('.ff-stat-off');
-      if (onEl) onEl.textContent = '🏃 ' + _fmt(_getPlayedTime(ps));
-      if (offEl) offEl.textContent = '🪑 ' + _fmt(_getBenchWait(ps));
+      if (onEl) onEl.textContent = '🏃 ' + _fmtCardBucket(_getPlayedTime(ps));
+      if (offEl) offEl.textContent = '🪑 ' + _fmtCardBucket(_getBenchWait(ps));
     });
   }
   const statsZone = _gs.container.querySelector('#team-stats');
