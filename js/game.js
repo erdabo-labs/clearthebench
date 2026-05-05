@@ -1696,9 +1696,13 @@ function _renderFootballBenchZone() {
     if (_getBenchWait(ps) > 0) { nextInId = ps.id; break; }
   }
 
+  const fieldCount = Object.values(_gs.players).filter(p => p.onField).length;
+  const autoCap = Math.min(count, fieldCount);
+  const autoDisabled = autoCap === 0 ? 'disabled' : '';
+  const autoBtn = _gs.watchMode ? '' : `<button class="zone-action zone-action-auto" id="btn-auto-rotate" ${autoDisabled} title="Suggest a rotation">⚡ AUTO</button>`;
   const addBtn = _gs.watchMode ? '' : '<button class="zone-action" id="btn-add-player">+ ADD</button>';
 
-  let html = '<div class="zone-title-row"><div class="zone-title">BENCH (' + count + ')</div>' + addBtn + '</div>';
+  let html = '<div class="zone-title-row"><div class="zone-title">BENCH (' + count + ')</div><div class="zone-actions">' + autoBtn + addBtn + '</div></div>';
   html += '<div class="ff-grid">';
   for (let i = 0; i < benchPlayers.length; i++) {
     const ps = benchPlayers[i];
@@ -1736,7 +1740,29 @@ function _renderFootballBenchZone() {
       });
     });
     zone.querySelector('#btn-add-player')?.addEventListener('click', _showAddPlayerModal);
+    zone.querySelector('#btn-auto-rotate')?.addEventListener('click', _autoFillRotationQueue);
   }
+}
+
+function _autoFillRotationQueue() {
+  if (_gs.watchMode) return;
+  const fieldPlayers = _getFieldPlayers();
+  const benchPlayers = Object.values(_gs.players)
+    .filter(p => !p.onField)
+    .sort((a, b) => _getBenchWait(b) - _getBenchWait(a));
+  const n = Math.min(fieldPlayers.length, benchPlayers.length);
+  if (n === 0) return;
+
+  // Field is already sorted most-played first by _getFieldPlayers().
+  _gs.queueOut = fieldPlayers.slice(0, n).map(p => p.id);
+  _gs.queueIn = benchPlayers.slice(0, n).map(p => p.id);
+
+  if (_isFootball()) {
+    _renderFootballFieldZone();
+    _renderFootballBenchZone();
+    _renderFootballRotationQueue();
+  }
+  _broadcastQueue();
 }
 
 async function _showAddPlayerModal() {

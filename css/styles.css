@@ -983,6 +983,22 @@ html, body {
   background: var(--card);
 }
 
+.zone-action[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.zone-action-auto {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+
+.zone-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
 /* ── PLAYER CHIP (Field Players) ────────────────────────────── */
 
 .player-chip {
