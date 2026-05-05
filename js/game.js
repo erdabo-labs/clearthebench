@@ -110,6 +110,40 @@ function _isFootball() {
   return _gs?.team?.sport === 'football';
 }
 
+// Render the 2-line hint column for a player card (left side under name).
+// state: 'next-out' | 'going-out' | 'next-in' | 'going-in' | null
+function _hintColMarkup(state) {
+  if (!state) {
+    return '<div class="ff-hint-col"><span class="ff-hint-line ff-hint-placeholder">x</span><span class="ff-hint-line ff-hint-placeholder">x</span></div>';
+  }
+  const direction = state.endsWith('out') ? 'out' : 'in';
+  const dirCls = direction === 'out' ? 'ff-hint-out' : 'ff-hint-in';
+  const word1 = state.startsWith('going') ? 'GOING' : 'NEXT';
+  const word2 = direction === 'out' ? 'OUT' : 'IN';
+  return `<div class="ff-hint-col"><span class="ff-hint-line ${dirCls}">${word1}</span><span class="ff-hint-line ${dirCls}">${word2}</span></div>`;
+}
+
+function _clampAutoCount() {
+  const fieldCount = Object.values(_gs.players).filter(p => p.onField).length;
+  const benchCount = Object.values(_gs.players).filter(p => !p.onField).length;
+  const max = Math.min(fieldCount, benchCount);
+  if (max <= 0) {
+    _gs.autoCount = 0;
+    return { max: 0, count: 0 };
+  }
+  if (typeof _gs.autoCount !== 'number') _gs.autoCount = max;
+  else _gs.autoCount = Math.max(1, Math.min(max, _gs.autoCount));
+  return { max, count: _gs.autoCount };
+}
+
+function _adjustAutoCount(delta) {
+  const { max } = _clampAutoCount();
+  if (max <= 0) return;
+  _gs.autoCount = Math.max(1, Math.min(max, (_gs.autoCount || max) + delta));
+  if (_isFootball()) _renderFootballBenchZone();
+  else _renderSoccerBenchZone();
+}
+
 function _removeCrashRecovery() {
   if (!_gs) return;
   try {
@@ -695,21 +729,16 @@ function _renderSoccerFieldZone() {
     if (isQueued) cls += ' queued-out';
     else if (isSuggestedOut) cls += ' suggest-out';
 
-    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
-    if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
-    else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
-
+    const hintState = isQueued ? 'going-out' : isSuggestedOut ? 'next-out' : null;
     const goalAction = editable
       ? `<button class="ff-card-stat-btn" data-player-id="${ps.id}" data-stat="goal">🥅 ${goals}</button>`
       : `<div class="ff-cell-events">🥅 ${goals}</div>`;
 
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
-        ${hint}
-        <div class="ff-cell-body">
-          <div class="ff-cell-info">
-            <div class="ff-name">${_esc(ps.name)}</div>
-          </div>
+        <div class="ff-name">${_esc(ps.name)}</div>
+        <div class="ff-cell-row">
+          ${_hintColMarkup(hintState)}
           <div class="ff-cell-meta">
             <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${_fmt(played)}</span><span class="ff-stat-pill ff-stat-off">🪑 ${_fmt(sat)}</span></div>
             ${editable ? `<div class="ff-card-stat-actions">${goalAction}</div>` : goalAction}
@@ -753,37 +782,35 @@ function _renderSoccerBenchZone() {
     if (_getBenchWait(ps) > 0) { nextInId = ps.id; break; }
   }
 
-  const fieldCount = Object.values(_gs.players).filter(p => p.onField).length;
-  const autoCap = Math.min(count, fieldCount);
-  const autoDisabled = autoCap === 0 ? 'disabled' : '';
-  const autoBtn = _gs.watchMode ? '' : `<button class="zone-action zone-action-auto" id="btn-auto-rotate" ${autoDisabled} title="Suggest a rotation">⚡ AUTO</button>`;
+  const { max: autoMax, count: autoN } = _clampAutoCount();
+  const autoStepper = _gs.watchMode ? '' : `
+    <div class="auto-stepper">
+      <button class="zone-action auto-step" id="btn-auto-down" ${autoMax <= 1 ? 'disabled' : ''}>−</button>
+      <button class="zone-action zone-action-auto" id="btn-auto-rotate" ${autoMax <= 0 ? 'disabled' : ''} title="Queue a rotation of ${autoN}">⚡ AUTO ${autoMax > 0 ? autoN : 0}</button>
+      <button class="zone-action auto-step" id="btn-auto-up" ${autoN >= autoMax ? 'disabled' : ''}>+</button>
+    </div>
+  `;
   const fieldBtn = _gs.watchMode ? '' : `<button class="zone-action" id="btn-adjust-field" title="Adjust on-field count">FIELD ${_gs.fieldSize}</button>`;
   const addBtn = _gs.watchMode ? '' : '<button class="zone-action" id="btn-add-player">+ ADD</button>';
 
-  let html = '<div class="zone-title-row"><div class="zone-title">BENCH (' + count + ')</div><div class="zone-actions">' + autoBtn + fieldBtn + addBtn + '</div></div>';
+  let html = '<div class="zone-title-row"><div class="zone-title">BENCH (' + count + ')</div><div class="zone-actions">' + autoStepper + fieldBtn + addBtn + '</div></div>';
   html += '<div class="ff-grid">';
   for (const ps of benchPlayers) {
     const sat = _getBenchWait(ps);
     const played = _getPlayedTime(ps);
-    const goals = _gs.tds?.[ps.id] || 0;
     const isQueued = queueInSet.has(ps.id);
     const isSuggestedIn = !isQueued && ps.id === nextInId;
     let cls = 'ff-cell bench';
     if (isQueued) cls += ' queued-in';
     else if (isSuggestedIn) cls += ' suggest-in';
-    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
-    if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
-    else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
+    const hintState = isQueued ? 'going-in' : isSuggestedIn ? 'next-in' : null;
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
-        ${hint}
-        <div class="ff-cell-body">
-          <div class="ff-cell-info">
-            <div class="ff-name">${_esc(ps.name)}</div>
-          </div>
+        <div class="ff-name">${_esc(ps.name)}</div>
+        <div class="ff-cell-row">
+          ${_hintColMarkup(hintState)}
           <div class="ff-cell-meta">
             <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${_fmt(played)}</span><span class="ff-stat-pill ff-stat-off">🪑 ${_fmt(sat)}</span></div>
-            <div class="ff-cell-events">🥅 ${goals}</div>
           </div>
         </div>
       </div>
@@ -800,6 +827,8 @@ function _renderSoccerBenchZone() {
     });
     zone.querySelector('#btn-add-player')?.addEventListener('click', _showAddPlayerModal);
     zone.querySelector('#btn-auto-rotate')?.addEventListener('click', _autoFillRotationQueue);
+    zone.querySelector('#btn-auto-down')?.addEventListener('click', () => _adjustAutoCount(-1));
+    zone.querySelector('#btn-auto-up')?.addEventListener('click', () => _adjustAutoCount(1));
     zone.querySelector('#btn-adjust-field')?.addEventListener('click', _showFieldSizeAdjust);
   }
 }
@@ -1514,10 +1543,7 @@ function _renderFootballFieldZone() {
     if (isQueued) cls += ' queued-out';
     else if (isSuggestedOut) cls += ' suggest-out';
 
-    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
-    if (isQueued) hint = '<span class="ff-hint hint-out">going out</span>';
-    else if (isSuggestedOut) hint = '<span class="ff-hint">next out</span>';
-
+    const hintState = isQueued ? 'going-out' : isSuggestedOut ? 'next-out' : null;
     const showOffenseStats = possession === 'offense';
     const statsLine = showOffenseStats ? `🏈${carries} · 🏆${tds}` : `🚩${pulls} · 🏆${tds}`;
     const statsActions = editable
@@ -1528,11 +1554,9 @@ function _renderFootballFieldZone() {
 
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
-        ${hint}
-        <div class="ff-cell-body">
-          <div class="ff-cell-info">
-            <div class="ff-name">${_esc(ps.name)}</div>
-          </div>
+        <div class="ff-name">${_esc(ps.name)}</div>
+        <div class="ff-cell-row">
+          ${_hintColMarkup(hintState)}
           <div class="ff-cell-meta">
             <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${played}</span><span class="ff-stat-pill ff-stat-off">🪑 ${sat}</span></div>
             ${editable ? `<div class="ff-card-stat-actions">${statsActions}</div>` : `<div class="ff-cell-events">${statsLine}</div>`}
@@ -1577,13 +1601,18 @@ function _renderFootballBenchZone() {
     if (_getBenchWait(ps) > 0) { nextInId = ps.id; break; }
   }
 
-  const fieldCount = Object.values(_gs.players).filter(p => p.onField).length;
-  const autoCap = Math.min(count, fieldCount);
-  const autoDisabled = autoCap === 0 ? 'disabled' : '';
-  const autoBtn = _gs.watchMode ? '' : `<button class="zone-action zone-action-auto" id="btn-auto-rotate" ${autoDisabled} title="Suggest a rotation">⚡ AUTO</button>`;
+  const { max: autoMax, count: autoN } = _clampAutoCount();
+  const autoStepper = _gs.watchMode ? '' : `
+    <div class="auto-stepper">
+      <button class="zone-action auto-step" id="btn-auto-down" ${autoMax <= 1 ? 'disabled' : ''}>−</button>
+      <button class="zone-action zone-action-auto" id="btn-auto-rotate" ${autoMax <= 0 ? 'disabled' : ''} title="Queue a rotation of ${autoN}">⚡ AUTO ${autoMax > 0 ? autoN : 0}</button>
+      <button class="zone-action auto-step" id="btn-auto-up" ${autoN >= autoMax ? 'disabled' : ''}>+</button>
+    </div>
+  `;
+  const fieldBtn = _gs.watchMode ? '' : `<button class="zone-action" id="btn-adjust-field" title="Adjust on-field count">FIELD ${_gs.fieldSize}</button>`;
   const addBtn = _gs.watchMode ? '' : '<button class="zone-action" id="btn-add-player">+ ADD</button>';
 
-  let html = '<div class="zone-title-row"><div class="zone-title">BENCH (' + count + ')</div><div class="zone-actions">' + autoBtn + addBtn + '</div></div>';
+  let html = '<div class="zone-title-row"><div class="zone-title">BENCH (' + count + ')</div><div class="zone-actions">' + autoStepper + fieldBtn + addBtn + '</div></div>';
   html += '<div class="ff-grid">';
   for (let i = 0; i < benchPlayers.length; i++) {
     const ps = benchPlayers[i];
@@ -1594,16 +1623,12 @@ function _renderFootballBenchZone() {
     let cls = 'ff-cell bench';
     if (isQueued) cls += ' queued-in';
     else if (isSuggestedIn) cls += ' suggest-in';
-    let hint = '<span class="ff-hint ff-hint-placeholder">&nbsp;</span>';
-    if (isQueued) hint = '<span class="ff-hint hint-in">going in</span>';
-    else if (isSuggestedIn) hint = '<span class="ff-hint">next in</span>';
+    const hintState = isQueued ? 'going-in' : isSuggestedIn ? 'next-in' : null;
     html += `
       <div class="${cls}" data-player-id="${ps.id}">
-        ${hint}
-        <div class="ff-cell-body">
-          <div class="ff-cell-info">
-            <div class="ff-name">${_esc(ps.name)}</div>
-          </div>
+        <div class="ff-name">${_esc(ps.name)}</div>
+        <div class="ff-cell-row">
+          ${_hintColMarkup(hintState)}
           <div class="ff-cell-meta">
             <div class="ff-stats"><span class="ff-stat-pill ff-stat-on">🏃 ${played}</span><span class="ff-stat-pill ff-stat-off">🪑 ${sat}</span></div>
           </div>
@@ -1622,19 +1647,23 @@ function _renderFootballBenchZone() {
     });
     zone.querySelector('#btn-add-player')?.addEventListener('click', _showAddPlayerModal);
     zone.querySelector('#btn-auto-rotate')?.addEventListener('click', _autoFillRotationQueue);
+    zone.querySelector('#btn-auto-down')?.addEventListener('click', () => _adjustAutoCount(-1));
+    zone.querySelector('#btn-auto-up')?.addEventListener('click', () => _adjustAutoCount(1));
+    zone.querySelector('#btn-adjust-field')?.addEventListener('click', _showFieldSizeAdjust);
   }
 }
 
 function _autoFillRotationQueue() {
   if (_gs.watchMode) return;
-  const fieldPlayers = _getFieldPlayers();
+  const { max, count } = _clampAutoCount();
+  if (max <= 0) return;
+  const n = Math.max(1, Math.min(max, count || max));
+
+  const fieldPlayers = _getFieldPlayers(); // already sorted most-played first
   const benchPlayers = Object.values(_gs.players)
     .filter(p => !p.onField)
     .sort((a, b) => _getBenchWait(b) - _getBenchWait(a));
-  const n = Math.min(fieldPlayers.length, benchPlayers.length);
-  if (n === 0) return;
 
-  // Field is already sorted most-played first by _getFieldPlayers().
   _gs.queueOut = fieldPlayers.slice(0, n).map(p => p.id);
   _gs.queueIn = benchPlayers.slice(0, n).map(p => p.id);
 
