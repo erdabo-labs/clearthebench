@@ -1890,29 +1890,30 @@ function _bindFootballGameControls() {
 
 async function _shareWatchLink() {
   if (!_gs?.game?.id) return;
-  const url = window.location.origin + '/?watch=' + _gs.game.id;
+  const code = _gs.game.watch_code || '';
   const teamName = _gs.team?.name || 'this game';
-  // Embed the URL inside `text` (not `url`). iOS Messages otherwise tries
-  // to render a preview card from `url`, and our SPA serves the same HTML
-  // for /?watch=... as for /, so the preview can collapse to the base
-  // origin. With the URL in `text`, the recipient gets the exact link.
-  const text = 'Watch ' + teamName + ' live — ClearTheBench: ' + url;
+  const url = window.location.origin + '/?watch=' + _gs.game.id;
+  const text = code
+    ? 'Watch ' + teamName + ' live on ClearTheBench\nCode: ' + code + '\n(Browser: ' + url + ')'
+    : 'Watch ' + teamName + ' live — ClearTheBench: ' + url;
 
   if (navigator.share) {
     try { await navigator.share({ text }); return; }
     catch (e) { /* user cancelled — fall through to clipboard */ }
   }
   try {
-    await navigator.clipboard.writeText(url);
-    _showToast('Watch link copied');
+    await navigator.clipboard.writeText(code || url);
+    _showToast(code ? 'Watch code copied: ' + code : 'Watch link copied');
   } catch (e) {
-    _showToast(url);
+    _showToast(code || url);
   }
 }
 
 // ── SPECTATOR (read-only) ────────────────────────────────────
 
 router_register('watch', async (container, { gameId } = {}) => {
+  push_init();
+
   // Tear down any prior live state
   if (_gs) {
     clearInterval(_gs.timerInterval);
@@ -2093,6 +2094,9 @@ function _renderWatchScreen() {
         <div class="sticky-top">
           <div class="game-header">
             <div class="app-logo">Clear<span>The</span>Bench</div>
+            <div class="header-actions">
+              <button class="header-btn" id="btn-watch-bell" title="Rotation alerts"></button>
+            </div>
           </div>
           <div class="spectator-banner">
             <span class="spectator-dot"></span>
@@ -2118,6 +2122,26 @@ function _renderWatchScreen() {
     _renderSoccerTeamStats();
   }
   _renderRotationQueue();
+  _refreshWatchBell();
+}
+
+function _refreshWatchBell() {
+  const btn = _gs?.container?.querySelector('#btn-watch-bell');
+  if (!btn) return;
+  const supported = 'PushManager' in window && 'serviceWorker' in navigator;
+  if (!supported || !CTB_VAPID_PUBLIC_KEY) { btn.style.display = 'none'; return; }
+  const gameId = _gs.game.id;
+  const subbed = push_isSpectatorSubscribed(gameId);
+  btn.textContent = subbed ? '🔔' : '🔕';
+  btn.onclick = async () => {
+    if (push_isSpectatorSubscribed(gameId)) {
+      await push_unsubscribeSpectator(gameId);
+    } else {
+      const ok = await push_subscribeSpectator(gameId);
+      if (!ok) { _showToast('Notifications blocked or unavailable'); return; }
+    }
+    _refreshWatchBell();
+  };
 }
 
 async function _executeQueueRotation() {
@@ -2190,6 +2214,7 @@ async function _executeQueueRotation() {
   }
   _renderRotationQueue();
   _saveCrashRecovery();
+  db_notifySpectatorsExecution(_gs.game.id);
 }
 
 // ── GAME SUMMARY SCREEN ──────────────────────────────────────

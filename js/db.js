@@ -407,6 +407,45 @@ async function db_deleteTeam(teamId) {
   return true;
 }
 
+// ── WATCH CODE ────────────────────────────────────────────────
+
+async function db_getGameByWatchCode(watchCode) {
+  const { data, error } = await _db
+    .from('ctb_games')
+    .select('id')
+    .eq('watch_code', watchCode.toUpperCase().trim())
+    .maybeSingle();
+  if (error) { console.error('db_getGameByWatchCode', error); return null; }
+  return data?.id || null;
+}
+
+// ── SPECTATOR PUSH ────────────────────────────────────────────
+
+async function db_saveSpectatorPushSub(gameId, endpoint, p256dh, auth) {
+  const { error } = await _db.from('ctb_spectator_push_subscriptions')
+    .upsert({ game_id: gameId, endpoint, p256dh, auth }, { onConflict: 'game_id,endpoint' });
+  if (error) { console.error('db_saveSpectatorPushSub', error); return false; }
+  return true;
+}
+
+async function db_deleteSpectatorPushSub(gameId, endpoint) {
+  await _db.from('ctb_spectator_push_subscriptions')
+    .delete().eq('game_id', gameId).eq('endpoint', endpoint);
+}
+
+async function db_notifySpectatorsExecution(gameId) {
+  try {
+    await fetch(SUPABASE_URL + '/functions/v1/notify-spectators', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ gameId }),
+    });
+  } catch (e) { console.error('db_notifySpectatorsExecution', e); }
+}
+
 // ── WEB PUSH ──────────────────────────────────────────────────
 
 async function db_savePushSubscription(coachId, endpoint, p256dh, auth) {
