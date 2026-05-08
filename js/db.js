@@ -4,7 +4,7 @@
 
 const _db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ── COACHES ──────────────────────────────────────────────────
+// ── COACHES ────────────────────────────────────────────
 
 async function db_getOrCreateCoach(email) {
   const { data: { user } } = await _db.auth.getUser();
@@ -30,7 +30,7 @@ async function db_getOrCreateCoach(email) {
   return created;
 }
 
-// ── TEAMS ─────────────────────────────────────────────────────
+// ── TEAMS ───────────────────────────────────────────────────
 
 async function db_getTeams(coachId) {
   const { data, error } = await _db
@@ -127,7 +127,7 @@ async function db_deactivatePlayer(playerId) {
   return db_updatePlayer(playerId, { active: false });
 }
 
-// ── GAMES ─────────────────────────────────────────────────────
+// ── GAMES ───────────────────────────────────────────────────
 
 async function db_createGame({ seasonId, opponent, mode, fieldSize, strategySnapshot, playerIds }) {
   const { data: game, error } = await _db
@@ -185,7 +185,7 @@ async function db_addPlayerToGameRoster(gameId, playerId) {
   return data;
 }
 
-// ── GAME EVENTS ───────────────────────────────────────────────
+// ── GAME EVENTS ───────────────────────────────────────────────────
 
 async function db_insertEvent({ gameId, playerId, eventType, timestamp, seriesNum, meta }) {
   const row = {
@@ -212,7 +212,8 @@ async function db_getGameEvents(gameId) {
     .from('ctb_game_events')
     .select('*')
     .eq('game_id', gameId)
-    .order('timestamp', { ascending: true });
+    .order('timestamp', { ascending: true })
+    .order('created_at', { ascending: true });
 
   if (error) { console.error('db_getGameEvents', error); return []; }
   return data;
@@ -239,7 +240,7 @@ async function db_deleteRecentEvents(gameId, count) {
   return true;
 }
 
-// ── REALTIME (spectator) ─────────────────────────────────────
+// ── REALTIME (spectator) ──────────────────────────────────────────────────
 
 function db_subscribeToGame(gameId, onEvent) {
   return _db
@@ -257,7 +258,7 @@ function db_unsubscribe(channel) {
   if (channel) _db.removeChannel(channel);
 }
 
-// ── ACTIVE GAME ───────────────────────────────────────────────
+// ── ACTIVE GAME ─────────────────────────────────────────────────────────
 
 async function db_getActiveGame(seasonId) {
   const { data, error } = await _db
@@ -278,7 +279,7 @@ async function db_getActiveGame(seasonId) {
   return null;
 }
 
-// ── GAME SUMMARY ──────────────────────────────────────────────
+// ── GAME SUMMARY ────────────────────────────────────────────────────────
 
 async function db_getGameSummary(gameId) {
   const [roster, events] = await Promise.all([
@@ -288,8 +289,12 @@ async function db_getGameSummary(gameId) {
 
   const playerMap = {};
   for (const player of roster) {
-    playerMap[player.id] = { player, fieldEnteredAt: null, totalOnTime: 0, carries: 0, pulls: 0, tds: 0 };
+    playerMap[player.id] = { player, fieldEnteredAt: null, totalOnTime: 0, carries: 0, pulls: 0, tds: 0, offPlays: 0, defPlays: 0 };
   }
+
+  // Track field state for crediting plays to on-field players
+  const fieldOnField = {};
+  for (const player of roster) fieldOnField[player.id] = false;
 
   let gameStartTs = null;
   let gameEndTs = null;
@@ -301,23 +306,35 @@ async function db_getGameSummary(gameId) {
     const ts = evt.timestamp || 0;
     if (evt.event_type === 'game_start' && gameStartTs === null) gameStartTs = ts;
     if (evt.event_type === 'game_end') gameEndTs = ts;
-    if (evt.event_type === 'play_logged') {
-      if (evt.meta?.side === 'offense') offPlays++;
-      else if (evt.meta?.side === 'defense') defPlays++;
-    }
     if (evt.event_type === 'score') {
       const team = evt.meta?.team;
       const d = evt.meta?.delta ?? 1;
       if (team === 'us') score.us = Math.max(0, score.us + d);
       else if (team === 'opp') score.opp = Math.max(0, score.opp + d);
     }
+    // play_logged has no player_id — credit all currently on-field players
+    if (evt.event_type === 'play_logged') {
+      const side = evt.meta?.side;
+      if (side === 'offense') offPlays++;
+      else if (side === 'defense') defPlays++;
+      for (const [pid, isOn] of Object.entries(fieldOnField)) {
+        if (isOn && playerMap[pid]) {
+          playerMap[pid].totalOnTime++;
+          if (side === 'offense') playerMap[pid].offPlays++;
+          else if (side === 'defense') playerMap[pid].defPlays++;
+        }
+      }
+      continue;
+    }
     const pm = evt.player_id ? playerMap[evt.player_id] : null;
     if (!pm) continue;
     if (evt.event_type === 'sub_on') {
       pm.fieldEnteredAt = ts;
+      fieldOnField[evt.player_id] = true;
     } else if (evt.event_type === 'sub_off' && pm.fieldEnteredAt !== null) {
       pm.totalOnTime += Math.max(0, ts - pm.fieldEnteredAt);
       pm.fieldEnteredAt = null;
+      fieldOnField[evt.player_id] = false;
     } else if (evt.event_type === 'carry') {
       pm.carries = Math.max(0, pm.carries + (evt.meta?.delta ?? 1));
     } else if (evt.event_type === 'flag_pull') {
@@ -338,7 +355,7 @@ async function db_getGameSummary(gameId) {
   }
 
   const players = Object.values(playerMap)
-    .map(pm => ({ player: pm.player, totalOnTime: pm.totalOnTime, carries: pm.carries, pulls: pm.pulls, tds: pm.tds }))
+    .map(pm => ({ player: pm.player, totalOnTime: pm.totalOnTime, carries: pm.carries, pulls: pm.pulls, tds: pm.tds, offPlays: pm.offPlays, defPlays: pm.defPlays }))
     .sort((a, b) => b.totalOnTime - a.totalOnTime);
 
   const gameDuration = gameEndTs != null && gameStartTs != null
@@ -372,7 +389,7 @@ async function db_getPastGames(seasonId) {
     .map(g => ({ ...g, gameDuration: endMap[g.id] || 0 }));
 }
 
-// ── DELETE ────────────────────────────────────────────────────
+// ── DELETE ─────────────────────────────────────────────────────────────
 
 async function db_deleteGame(gameId) {
   await _db.from('ctb_game_events').delete().eq('game_id', gameId);
@@ -407,7 +424,7 @@ async function db_deleteTeam(teamId) {
   return true;
 }
 
-// ── WATCH CODE ────────────────────────────────────────────────
+// ── WATCH CODE ────────────────────────────────────────────────────────────
 
 async function db_getGameByWatchCode(watchCode) {
   const { data, error } = await _db
@@ -419,7 +436,7 @@ async function db_getGameByWatchCode(watchCode) {
   return data?.id || null;
 }
 
-// ── SPECTATOR PUSH ────────────────────────────────────────────
+// ── SPECTATOR PUSH ────────────────────────────────────────────────────────────
 
 async function db_saveSpectatorPushSub(gameId, endpoint, p256dh, auth) {
   const { error } = await _db.from('ctb_spectator_push_subscriptions')
@@ -446,7 +463,7 @@ async function db_notifySpectatorsExecution(gameId) {
   } catch (e) { console.error('db_notifySpectatorsExecution', e); }
 }
 
-// ── WEB PUSH ──────────────────────────────────────────────────
+// ── WEB PUSH ─────────────────────────────────────────────────────────────
 
 async function db_savePushSubscription(coachId, endpoint, p256dh, auth) {
   const { error } = await _db.from('ctb_push_subscriptions')
@@ -474,7 +491,7 @@ async function db_clearPendingAlert(gameId) {
     .update({ active: false }).eq('game_id', gameId);
 }
 
-// ── HELPERS ───────────────────────────────────────────────────
+// ── HELPERS ─────────────────────────────────────────────────────────────
 
 function _generateCode(length) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
