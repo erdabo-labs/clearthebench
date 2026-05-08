@@ -288,16 +288,29 @@ async function db_getGameSummary(gameId) {
 
   const playerMap = {};
   for (const player of roster) {
-    playerMap[player.id] = { player, fieldEnteredAt: null, totalOnTime: 0 };
+    playerMap[player.id] = { player, fieldEnteredAt: null, totalOnTime: 0, carries: 0, pulls: 0, tds: 0 };
   }
 
   let gameStartTs = null;
   let gameEndTs = null;
+  let offPlays = 0;
+  let defPlays = 0;
+  const score = { us: 0, opp: 0 };
 
   for (const evt of events) {
     const ts = evt.timestamp || 0;
     if (evt.event_type === 'game_start' && gameStartTs === null) gameStartTs = ts;
     if (evt.event_type === 'game_end') gameEndTs = ts;
+    if (evt.event_type === 'play_logged') {
+      if (evt.meta?.side === 'offense') offPlays++;
+      else if (evt.meta?.side === 'defense') defPlays++;
+    }
+    if (evt.event_type === 'score') {
+      const team = evt.meta?.team;
+      const d = evt.meta?.delta ?? 1;
+      if (team === 'us') score.us = Math.max(0, score.us + d);
+      else if (team === 'opp') score.opp = Math.max(0, score.opp + d);
+    }
     const pm = evt.player_id ? playerMap[evt.player_id] : null;
     if (!pm) continue;
     if (evt.event_type === 'sub_on') {
@@ -305,6 +318,12 @@ async function db_getGameSummary(gameId) {
     } else if (evt.event_type === 'sub_off' && pm.fieldEnteredAt !== null) {
       pm.totalOnTime += Math.max(0, ts - pm.fieldEnteredAt);
       pm.fieldEnteredAt = null;
+    } else if (evt.event_type === 'carry') {
+      pm.carries = Math.max(0, pm.carries + (evt.meta?.delta ?? 1));
+    } else if (evt.event_type === 'flag_pull') {
+      pm.pulls = Math.max(0, pm.pulls + (evt.meta?.delta ?? 1));
+    } else if (evt.event_type === 'score' && evt.meta?.team === 'us') {
+      pm.tds = Math.max(0, pm.tds + (evt.meta?.delta ?? 1));
     }
   }
 
@@ -319,14 +338,38 @@ async function db_getGameSummary(gameId) {
   }
 
   const players = Object.values(playerMap)
-    .map(pm => ({ player: pm.player, totalOnTime: pm.totalOnTime }))
+    .map(pm => ({ player: pm.player, totalOnTime: pm.totalOnTime, carries: pm.carries, pulls: pm.pulls, tds: pm.tds }))
     .sort((a, b) => b.totalOnTime - a.totalOnTime);
 
   const gameDuration = gameEndTs != null && gameStartTs != null
     ? Math.max(0, gameEndTs - gameStartTs)
     : Math.max(0, closeTs - (gameStartTs || 0));
 
-  return { players, gameDuration };
+  return { players, gameDuration, score, offPlays, defPlays };
+}
+
+async function db_getPastGames(seasonId) {
+  const { data: games, error } = await _db
+    .from('ctb_games')
+    .select('*')
+    .eq('season_id', seasonId)
+    .order('created_at', { ascending: false });
+
+  if (error || !games || !games.length) return [];
+
+  const gameIds = games.map(g => g.id);
+  const { data: endEvents } = await _db
+    .from('ctb_game_events')
+    .select('game_id, timestamp')
+    .in('game_id', gameIds)
+    .eq('event_type', 'game_end');
+
+  const endMap = {};
+  for (const e of (endEvents || [])) endMap[e.game_id] = e.timestamp;
+
+  return games
+    .filter(g => g.id in endMap)
+    .map(g => ({ ...g, gameDuration: endMap[g.id] || 0 }));
 }
 
 // ── DELETE ────────────────────────────────────────────────────

@@ -503,7 +503,10 @@ router_register('team', async (container, { coach, team } = {}) => {
     db_getActiveSeason(team.id),
   ]);
 
-  const activeGame = season ? await db_getActiveGame(season.id) : null;
+  const [activeGame, pastGames] = await Promise.all([
+    season ? db_getActiveGame(season.id) : Promise.resolve(null),
+    season ? db_getPastGames(season.id) : Promise.resolve([]),
+  ]);
 
   const playerRows = players.length
     ? players.map(p => {
@@ -557,6 +560,27 @@ router_register('team', async (container, { coach, team } = {}) => {
           </button>
           ${!season ? '<div class="hint-text">No active season.</div>' : ''}
         </div>
+
+        ${pastGames.length > 0 ? `
+        <div class="section-title" style="margin-top:24px">PAST GAMES <span class="section-count">${pastGames.length}</span></div>
+        <div class="past-game-list" id="past-game-list">
+          ${pastGames.map(g => {
+            const opp = g.opponent ? 'vs ' + _esc(g.opponent) : 'No opponent';
+            const date = new Date(g.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            const isFootball = g.mode === 'play_count';
+            const fmtSec = (s) => { const m = Math.floor(s / 60); const sec = s % 60; return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0'); };
+            const stat = isFootball ? (g.gameDuration + ' plays') : fmtSec(g.gameDuration);
+            return `<div class="past-game-row" data-game-id="${g.id}">
+              <div class="past-game-info">
+                <div class="past-game-opp">${opp}</div>
+                <div class="past-game-date">${date}</div>
+              </div>
+              <div class="past-game-stat">${stat}</div>
+              <div class="past-game-arrow">&#8250;</div>
+            </div>`;
+          }).join('')}
+        </div>
+        ` : ''}
 
         <div class="danger-zone">
           <button class="btn-ghost btn-danger" id="btn-delete-team">Delete Team</button>
@@ -631,5 +655,12 @@ router_register('team', async (container, { coach, team } = {}) => {
       await db_deleteTeam(team.id);
       router_navigate('home', { coach });
     }
+  });
+
+  // Past games
+  container.querySelectorAll('.past-game-row').forEach(row => {
+    row.addEventListener('click', () => {
+      router_navigate('game-summary', { gameId: row.dataset.gameId, coach, team, season });
+    });
   });
 });
