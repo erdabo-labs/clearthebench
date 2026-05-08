@@ -2155,9 +2155,9 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
   }
 
   const isFootball = game?.mode === 'play_count';
-  const fmtVal = (v) => isFootball ? (v + ' plays') : _fmt(v);
-
   const opponent = game?.opponent || '';
+  const teamName = team?.name || game?.ctb_seasons?.ctb_teams?.name || 'US';
+
   const maxTime = summary.players.length > 0
     ? Math.max(...summary.players.map(p => p.totalOnTime), 1)
     : 1;
@@ -2169,7 +2169,6 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
     const mean = times.reduce((a, b) => a + b, 0) / times.length;
     const variance = times.reduce((a, t) => a + (t - mean) ** 2, 0) / times.length;
     const stdDev = Math.sqrt(variance);
-    // Map std dev: 0 = 5 stars, 120s+ = 1 star
     if (stdDev === 0) {
       stars = 5;
     } else {
@@ -2183,18 +2182,57 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
       : '<span class="star-empty">&#9733;</span>'
   ).join('');
 
+  const hasScore = summary.score.us > 0 || summary.score.opp > 0;
+
+  const scoreBanner = (hasScore || isFootball) ? `
+    <div class="summary-score">
+      <div class="summary-score-side">
+        <div class="summary-score-label">${_esc(teamName)}</div>
+        <div class="summary-score-val">${summary.score.us}</div>
+      </div>
+      <div class="summary-score-div">—</div>
+      <div class="summary-score-side">
+        <div class="summary-score-label">${opponent ? _esc(opponent) : 'OPP'}</div>
+        <div class="summary-score-val">${summary.score.opp}</div>
+      </div>
+    </div>
+  ` : '';
+
+  const playsBreakdown = isFootball ? `
+    <div class="summary-plays-row">
+      <span class="summary-plays-chip offense">${summary.offPlays} offense</span>
+      <span class="summary-plays-chip defense">${summary.defPlays} defense</span>
+    </div>
+  ` : '';
+
   const playerRows = summary.players.map(p => {
     const pct = Math.round((p.totalOnTime / maxTime) * 100);
+    let pills = '';
+    if (isFootball) {
+      pills += `<span class="sum-stat-pill">${p.totalOnTime}P</span>`;
+      if (p.carries > 0) pills += `<span class="sum-stat-pill">&#127944; ${p.carries}</span>`;
+      if (p.tds > 0) pills += `<span class="sum-stat-pill sum-stat-highlight">&#127942; ${p.tds}</span>`;
+      if (p.pulls > 0) pills += `<span class="sum-stat-pill">&#127988; ${p.pulls}</span>`;
+    } else {
+      pills += `<span class="sum-stat-pill">${_fmt(p.totalOnTime)}</span>`;
+      if (p.tds > 0) pills += `<span class="sum-stat-pill sum-stat-highlight">&#127945; ${p.tds}</span>`;
+    }
     return `
       <div class="summary-row">
-        <div class="summary-player-name">${_esc(p.player.name)}</div>
+        <div class="summary-row-top">
+          <div class="summary-player-name">${_esc(p.player.name)}</div>
+          <div class="summary-stat-pills">${pills}</div>
+        </div>
         <div class="summary-bar">
           <div class="summary-bar-fill" style="width:${pct}%"></div>
         </div>
-        <div class="summary-player-time">${fmtVal(p.totalOnTime)}</div>
       </div>
     `;
   }).join('');
+
+  const durationLine = isFootball
+    ? (summary.offPlays + summary.defPlays) + ' total plays'
+    : 'Duration: ' + _fmt(summary.gameDuration);
 
   container.innerHTML = `
     <div class="screen">
@@ -2206,8 +2244,11 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
         <div class="summary-header">
           <div class="summary-title">GAME SUMMARY</div>
           ${opponent ? '<div class="summary-sub">vs ' + _esc(opponent) + '</div>' : ''}
-          <div class="summary-sub">Total: ${fmtVal(summary.gameDuration)}</div>
+          <div class="summary-sub">${durationLine}</div>
         </div>
+
+        ${scoreBanner}
+        ${playsBreakdown}
 
         <div class="equity-stars">${starsHtml}</div>
 
@@ -2225,10 +2266,25 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
   container.querySelector('#btn-share')?.addEventListener('click', async () => {
     const lines = ['ClearTheBench Game Summary'];
     if (opponent) lines.push('vs ' + opponent);
-    lines.push((isFootball ? 'Total plays: ' : 'Duration: ') + fmtVal(summary.gameDuration));
+    if (hasScore || isFootball) lines.push(_esc(teamName) + ' ' + summary.score.us + ' — ' + (opponent || 'OPP') + ' ' + summary.score.opp);
+    if (isFootball) {
+      lines.push('Plays: ' + (summary.offPlays + summary.defPlays) + ' (' + summary.offPlays + ' offense, ' + summary.defPlays + ' defense)');
+    } else {
+      lines.push('Duration: ' + _fmt(summary.gameDuration));
+    }
     lines.push('');
     for (const p of summary.players) {
-      lines.push(p.player.name + ': ' + fmtVal(p.totalOnTime));
+      let line = p.player.name + ': ' + (isFootball ? p.totalOnTime + ' plays' : _fmt(p.totalOnTime));
+      const extras = [];
+      if (isFootball) {
+        if (p.carries > 0) extras.push(p.carries + ' carries');
+        if (p.tds > 0) extras.push(p.tds + ' TDs');
+        if (p.pulls > 0) extras.push(p.pulls + ' flag pulls');
+      } else {
+        if (p.tds > 0) extras.push(p.tds + ' goals');
+      }
+      if (extras.length) line += ' · ' + extras.join(', ');
+      lines.push(line);
     }
     const text = lines.join('\n');
 
@@ -2246,8 +2302,9 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
     }
   });
 
-  // Done
+  // Done — go back to team if available, otherwise home
   container.querySelector('#btn-done')?.addEventListener('click', () => {
-    router_navigate('home', { coach });
+    if (team) router_navigate('team', { coach, team });
+    else router_navigate('home', { coach });
   });
 });
