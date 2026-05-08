@@ -12,9 +12,16 @@ webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 
 const db = createClient(supabaseUrl, serviceRoleKey);
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+
   const { gameId } = await req.json().catch(() => ({}));
-  if (!gameId) return new Response('missing gameId', { status: 400 });
+  if (!gameId) return new Response('missing gameId', { status: 400, headers: CORS });
 
   const { data: subs, error } = await db
     .from('ctb_spectator_push_subscriptions')
@@ -23,11 +30,11 @@ Deno.serve(async (req) => {
 
   if (error) {
     console.error('fetch spectator subs', error);
-    return new Response('error', { status: 500 });
+    return new Response('error', { status: 500, headers: CORS });
   }
 
   if (!subs || subs.length === 0) {
-    return new Response(JSON.stringify({ sent: 0 }), { headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ sent: 0 }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
   }
 
   const payload = JSON.stringify({
@@ -63,5 +70,5 @@ Deno.serve(async (req) => {
       .delete().in('endpoint', staleEndpoints);
   }
 
-  return new Response(JSON.stringify({ sent }), { headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ sent }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
 });
