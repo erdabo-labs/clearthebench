@@ -2425,7 +2425,6 @@ html, body {
   color: var(--text-muted);
   letter-spacing: 0.2px;
   white-space: nowrap;
-  flex-wrap: wrap;
 }
 
 .ff-stat-pill {
