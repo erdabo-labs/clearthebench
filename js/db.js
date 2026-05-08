@@ -374,6 +374,14 @@ async function db_getPastGames(seasonId) {
 
 // ── DELETE ────────────────────────────────────────────────────
 
+async function db_deleteGame(gameId) {
+  await _db.from('ctb_game_events').delete().eq('game_id', gameId);
+  await _db.from('ctb_game_roster').delete().eq('game_id', gameId);
+  const { error } = await _db.from('ctb_games').delete().eq('id', gameId);
+  if (error) { console.error('db_deleteGame', error); return false; }
+  return true;
+}
+
 async function db_deleteTeam(teamId) {
   const { data: seasons } = await _db.from('ctb_seasons').select('id').eq('team_id', teamId);
   const seasonIds = (seasons || []).map(s => s.id);
