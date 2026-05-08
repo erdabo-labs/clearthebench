@@ -2622,6 +2622,10 @@ html, body {
   text-transform: uppercase;
 }
 
+.queue-header-last .queue-title {
+  color: var(--text-muted);
+}
+
 .queue-actions {
   display: flex;
   gap: 8px;
