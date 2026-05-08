@@ -1,7 +1,4 @@
 {
   "outputDirectory": ".",
-  "routes": [
-    { "src": "/sw.js", "dest": "/sw.js" },
-    { "src": "/(.*)", "dest": "/index.html" }
-  ]
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
