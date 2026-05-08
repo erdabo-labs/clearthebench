@@ -2092,6 +2092,11 @@ async function _executeQueueRotation() {
   if (!_gs) return;
   if (_gs.queueIn.length === 0 && _gs.queueOut.length === 0) return;
 
+  // Sync from wall clock before snapshot so sub/pause events get accurate time
+  if (!_isFootball() && _gs.timerRunning && _gs.wallAnchor) {
+    _gs.timerSeconds = _gs.timerAnchor + Math.floor((Date.now() - _gs.wallAnchor) / 1000);
+  }
+
   const ts = _gs.timerSeconds;
 
   // Process outs first so any size-growing rotations can fit.
@@ -2127,6 +2132,21 @@ async function _executeQueueRotation() {
     _renderFootballBenchZone();
     _renderFootballTeamStats();
   } else {
+    // Pause the clock — coach presses START when play resumes
+    if (_gs.timerRunning) {
+      await db_insertEvent({
+        gameId: _gs.game.id,
+        playerId: null,
+        eventType: 'game_pause',
+        timestamp: ts,
+      });
+      _gs.timerRunning = false;
+      clearInterval(_gs.timerInterval);
+      _gs.timerInterval = null;
+      _gs.wallAnchor = null;
+      _gs.timerAnchor = null;
+      _releaseWakeLock();
+    }
     _gs.lastAlertAt = ts;
     _gs.alertFired = false;
     _renderSoccerFieldZone();
