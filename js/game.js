@@ -463,6 +463,9 @@ router_register('game', async (container, params) => {
     carries: {},                  // playerId -> count
     pulls: {},                    // playerId -> count
     tds: {},                      // playerId -> count
+    lastRotationIns: [],
+    lastRotationOuts: [],
+    lastRotationTs: 0,
   };
 
   // Initialize all players as bench with zeroed stats
@@ -1068,6 +1071,7 @@ function _startTimerInterval() {
     _updateClockDisplay();
     _updatePlayerTimes();
     _checkRotationAlert();
+    _expireLastRotationIfNeeded();
   }, 1000);
 
   // Catch up immediately when returning from background
@@ -1141,6 +1145,16 @@ function _updatePlayerTimes() {
   }
 
   _updateSoccerTimerClock();
+}
+
+function _expireLastRotationIfNeeded() {
+  if (!_gs?.lastRotationTs || _isFootball()) return;
+  if ((Date.now() - _gs.lastRotationTs) > 30000) {
+    _gs.lastRotationIns = [];
+    _gs.lastRotationOuts = [];
+    _gs.lastRotationTs = 0;
+    _renderRotationQueue();
+  }
 }
 
 function _updateSoccerTimerClock() {
@@ -1377,6 +1391,10 @@ async function _logFootballPlay() {
     meta: { side },
   });
 
+  _gs.lastRotationIns = [];
+  _gs.lastRotationOuts = [];
+  _gs.lastRotationTs = 0;
+
   try { navigator.vibrate(20); } catch (e) { /* ignore */ }
 
   _renderFootballPossession();
@@ -1475,7 +1493,13 @@ function _broadcastQueue() {
     _gs.queueChannel.send({
       type: 'broadcast',
       event: 'queue',
-      payload: { in: _gs.queueIn.slice(), out: _gs.queueOut.slice() },
+      payload: {
+        in: _gs.queueIn.slice(),
+        out: _gs.queueOut.slice(),
+        lastIn: _gs.lastRotationIns.slice(),
+        lastOut: _gs.lastRotationOuts.slice(),
+        lastTs: _gs.lastRotationTs,
+      },
     });
   } catch (e) { /* ignore */ }
 }
@@ -1488,8 +1512,38 @@ function _renderRotationQueue() {
   const outIds = _gs.queueOut || [];
 
   if (inIds.length === 0 && outIds.length === 0) {
-    zone.innerHTML = '';
-    zone.classList.remove('visible');
+    const lastIns = _gs.lastRotationIns || [];
+    const lastOuts = _gs.lastRotationOuts || [];
+    const lastTs = _gs.lastRotationTs || 0;
+    const isSoccer = !_isFootball();
+    const soccerExpired = isSoccer && lastTs > 0 && (Date.now() - lastTs) > 30000;
+
+    if (lastIns.length > 0 && !soccerExpired) {
+      const itemHTML = (id, side) => {
+        const ps = _gs.players[id];
+        if (!ps) return '';
+        return '<div class="queue-item ' + side + '">' + _esc(ps.name) + '</div>';
+      };
+      zone.innerHTML = `
+        <div class="queue-header queue-header-last">
+          <span class="queue-title">LAST ROTATION</span>
+        </div>
+        <div class="queue-cols">
+          <div class="queue-col queue-col-in">
+            <div class="queue-col-label">WENT IN</div>
+            <div class="queue-col-list">${lastIns.map(id => itemHTML(id, 'in')).join('')}</div>
+          </div>
+          <div class="queue-col queue-col-out">
+            <div class="queue-col-label">WENT OUT</div>
+            <div class="queue-col-list">${lastOuts.map(id => itemHTML(id, 'out')).join('')}</div>
+          </div>
+        </div>
+      `;
+      zone.classList.add('visible');
+    } else {
+      zone.innerHTML = '';
+      zone.classList.remove('visible');
+    }
     return;
   }
 
@@ -1974,6 +2028,9 @@ router_register('watch', async (container, { gameId } = {}) => {
     carries: {},
     pulls: {},
     tds: {},
+    lastRotationIns: [],
+    lastRotationOuts: [],
+    lastRotationTs: 0,
   };
 
   for (const p of roster) {
@@ -2000,6 +2057,11 @@ router_register('watch', async (container, { gameId } = {}) => {
         if (!_gs || !_gs.watchMode) return;
         _gs.queueIn = Array.isArray(payload?.in) ? payload.in : [];
         _gs.queueOut = Array.isArray(payload?.out) ? payload.out : [];
+        if (Array.isArray(payload?.lastIn) && payload.lastIn.length > 0) {
+          _gs.lastRotationIns = payload.lastIn;
+          _gs.lastRotationOuts = Array.isArray(payload.lastOut) ? payload.lastOut : [];
+          _gs.lastRotationTs = payload.lastTs || Date.now();
+        }
         _renderRotationQueue();
         if (_isFootball()) {
           _renderFootballFieldZone();
@@ -2046,6 +2108,9 @@ function _applyEventForWatch(evt) {
     const side = evt.meta?.side;
     if (side === 'offense') _gs.offPlays++;
     else if (side === 'defense') _gs.defPlays++;
+    _gs.lastRotationIns = [];
+    _gs.lastRotationOuts = [];
+    _gs.lastRotationTs = 0;
     // Update on-field players' currentStint to reflect the new play count
     for (const ps of Object.values(_gs.players)) {
       if (ps.onField && ps.fieldEnteredAt !== null) {
@@ -2195,6 +2260,9 @@ async function _executeQueueRotation() {
     ps.currentStint = 0;
   }
 
+  _gs.lastRotationIns = ins.slice();
+  _gs.lastRotationOuts = outs.slice();
+  _gs.lastRotationTs = Date.now();
   _gs.queueIn = [];
   _gs.queueOut = [];
   _broadcastQueue();
