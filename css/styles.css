@@ -991,6 +991,16 @@ html, body {
 .zone-action-auto {
   border-color: var(--lime);
   color: var(--lime);
+  font-weight: 700;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .zone-action-auto {
+    color: var(--lime-dim);
+  }
+}
+:root[data-theme="light"] .zone-action-auto {
+  color: var(--lime-dim);
 }
 
 .zone-actions {
@@ -2139,6 +2149,8 @@ html, body {
   user-select: none;
   transition: transform 0.08s, background 0.15s, border-color 0.15s;
   min-height: 44px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .ff-cell:active {
@@ -2242,6 +2254,7 @@ html, body {
   color: var(--text-muted);
   letter-spacing: 0.2px;
   white-space: nowrap;
+  flex-wrap: wrap;
 }
 
 .ff-stat-pill {

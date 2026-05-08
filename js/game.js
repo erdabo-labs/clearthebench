@@ -2120,14 +2120,9 @@ async function _executeQueueRotation() {
     _renderFootballBenchZone();
     _renderFootballTeamStats();
   } else {
-    // Soccer: rotating also resets the rotation cycle
-    _gs.lastAlertAt = ts;
-    _gs.alertFired = false;
     _renderSoccerFieldZone();
     _renderSoccerBenchZone();
     _renderSoccerTeamStats();
-    _renderSoccerTimerPanel();
-    _bindSoccerTimerControls();
   }
   _renderRotationQueue();
   _saveCrashRecovery();
@@ -2216,6 +2211,7 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
         <button class="share-btn" id="btn-share">Share Summary</button>
         <div class="home-actions">
           <button class="btn-primary" id="btn-done">Done</button>
+          <button class="btn-ghost btn-danger" id="btn-delete-game">Delete Game</button>
         </div>
       </div>
     </div>
@@ -2249,5 +2245,20 @@ router_register('game-summary', async (container, { gameId, coach, team, season 
   // Done
   container.querySelector('#btn-done')?.addEventListener('click', () => {
     router_navigate('home', { coach });
+  });
+
+  // Delete game
+  container.querySelector('#btn-delete-game')?.addEventListener('click', async () => {
+    if (!confirm('Delete this game and all its data? This cannot be undone.')) return;
+    const btn = container.querySelector('#btn-delete-game');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    const ok = await db_deleteGame(gameId);
+    if (ok) {
+      router_navigate('team', { coach, team, season });
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Delete Game';
+    }
   });
 });
