@@ -594,7 +594,7 @@ function _renderGameScreen() {
             <div class="app-logo">Clear<span>The</span>Bench</div>
             <div class="header-actions">
               <button class="header-btn" id="btn-push-toggle" title="Rotation push alerts"></button>
-              <button class="header-btn" id="btn-share-watch" title="Share spectator link">SHARE</button>
+              <button class="header-btn header-btn-code" id="btn-share-watch" title="Share spectator code">${_esc(_gs.game.watch_code || 'SHARE')}</button>
               <div class="header-action" id="btn-end-game">END</div>
             </div>
           </div>
@@ -1250,7 +1250,7 @@ function _renderFootballGameScreen() {
           <div class="game-header">
             <div class="app-logo">Clear<span>The</span>Bench</div>
             <div class="header-actions">
-              <button class="header-btn" id="btn-share-watch" title="Share spectator link">SHARE</button>
+              <button class="header-btn header-btn-code" id="btn-share-watch" title="Share spectator code">${_esc(_gs.game.watch_code || 'SHARE')}</button>
               <div class="header-action" id="btn-end-game">END</div>
             </div>
           </div>
@@ -2096,6 +2096,7 @@ function _renderWatchScreen() {
             <div class="app-logo">Clear<span>The</span>Bench</div>
             <div class="header-actions">
               <button class="header-btn" id="btn-watch-bell" title="Rotation alerts"></button>
+              <button class="header-btn" id="btn-watch-exit" title="Leave game">✕</button>
             </div>
           </div>
           <div class="spectator-banner">
@@ -2122,6 +2123,19 @@ function _renderWatchScreen() {
     _renderSoccerTeamStats();
   }
   _renderRotationQueue();
+  _bindWatchControls();
+}
+
+function _bindWatchControls() {
+  const exitBtn = _gs?.container?.querySelector('#btn-watch-exit');
+  if (exitBtn) {
+    exitBtn.onclick = () => {
+      if (_gs?.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
+      if (_gs?.queueChannel) db_unsubscribe(_gs.queueChannel);
+      _gs = null;
+      router_navigate('home', {});
+    };
+  }
   _refreshWatchBell();
 }
 
@@ -2155,8 +2169,12 @@ async function _executeQueueRotation() {
 
   const ts = _gs.timerSeconds;
 
-  // Process outs first so any size-growing rotations can fit.
-  for (const outId of _gs.queueOut) {
+  // Cap to min(out, in) so field count can't exceed fieldSize
+  const swapCount = Math.min(_gs.queueOut.length, _gs.queueIn.length);
+  const outs = _gs.queueOut.slice(0, swapCount);
+  const ins = _gs.queueIn.slice(0, swapCount);
+
+  for (const outId of outs) {
     const ps = _gs.players[outId];
     if (!ps || !ps.onField) continue;
     await db_insertEvent({ gameId: _gs.game.id, playerId: outId, eventType: 'sub_off', timestamp: ts });
@@ -2167,7 +2185,7 @@ async function _executeQueueRotation() {
     ps.benchSince = ts;
   }
 
-  for (const inId of _gs.queueIn) {
+  for (const inId of ins) {
     const ps = _gs.players[inId];
     if (!ps || ps.onField) continue;
     await db_insertEvent({ gameId: _gs.game.id, playerId: inId, eventType: 'sub_on', timestamp: ts });
