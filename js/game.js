@@ -886,7 +886,7 @@ async function _refreshBellBtn() {
   const btn = _gs.container?.querySelector('#btn-push-toggle');
   if (!btn) return;
   const supported = 'PushManager' in window && 'serviceWorker' in navigator;
-  if (!supported || !window.CTB_VAPID_PUBLIC_KEY) { btn.style.display = 'none'; return; }
+  if (!supported || !CTB_VAPID_PUBLIC_KEY) { btn.style.display = 'none'; return; }
   const subscribed = await push_isSubscribed();
   btn.textContent = subscribed ? '🔔' : '🔕';
   btn.title = subscribed ? 'Push alerts ON — tap to disable' : 'Push alerts OFF — tap to enable';
