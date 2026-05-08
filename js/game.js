@@ -593,6 +593,7 @@ function _renderGameScreen() {
           <div class="game-header">
             <div class="app-logo">Clear<span>The</span>Bench</div>
             <div class="header-actions">
+              <button class="header-btn" id="btn-push-toggle" title="Rotation push alerts"></button>
               <button class="header-btn" id="btn-share-watch" title="Share spectator link">SHARE</button>
               <div class="header-action" id="btn-end-game">END</div>
             </div>
@@ -881,10 +882,32 @@ function _renderSoccerTeamStats() {
   }
 }
 
+async function _refreshBellBtn() {
+  const btn = _gs.container?.querySelector('#btn-push-toggle');
+  if (!btn) return;
+  const supported = 'PushManager' in window && 'serviceWorker' in navigator;
+  if (!supported || !window.CTB_VAPID_PUBLIC_KEY) { btn.style.display = 'none'; return; }
+  const subscribed = await push_isSubscribed();
+  btn.textContent = subscribed ? '🔔' : '🔕';
+  btn.title = subscribed ? 'Push alerts ON — tap to disable' : 'Push alerts OFF — tap to enable';
+}
+
 function _bindSoccerGameControls() {
   const c = _gs.container;
   c.querySelector('#btn-end-game')?.addEventListener('click', _handleEndGame);
   c.querySelector('#btn-share-watch')?.addEventListener('click', _shareWatchLink);
+  c.querySelector('#btn-push-toggle')?.addEventListener('click', async () => {
+    if (!_gs.coach?.id) return;
+    const subscribed = await push_isSubscribed();
+    if (subscribed) {
+      await push_unsubscribe(_gs.coach.id);
+    } else {
+      const ok = await push_subscribe(_gs.coach.id);
+      if (!ok) { _showToast('Notifications blocked or unavailable'); return; }
+    }
+    _refreshBellBtn();
+  });
+  _refreshBellBtn();
   _bindSoccerTimerControls();
 }
 
@@ -901,6 +924,9 @@ function _handleResetCycle() {
   _renderSoccerTimerPanel();
   _bindSoccerTimerControls();
   _saveCrashRecovery();
+  if (_gs.timerRunning && _gs.alertInterval && _gs.coach?.id) {
+    db_upsertPendingAlert(_gs.game.id, _gs.coach.id, _gs.alertInterval);
+  }
 }
 
 function _showIntervalAdjust() {
@@ -995,6 +1021,7 @@ async function _handleStartPause() {
     _gs.timerAnchor = null;
     _releaseWakeLock();
     _saveCrashRecovery();
+    db_clearPendingAlert(_gs.game.id);
   } else {
     // Unlock audio on user gesture (iOS requires this)
     _ensureAudioContext();
@@ -1009,6 +1036,10 @@ async function _handleStartPause() {
     _startTimerInterval();
     _requestWakeLock();
     _saveCrashRecovery();
+    if (_gs.alertInterval && _gs.coach?.id) {
+      const remaining = Math.max(1, _gs.alertInterval - Math.max(0, _gs.timerSeconds - (_gs.lastAlertAt || 0)));
+      db_upsertPendingAlert(_gs.game.id, _gs.coach.id, remaining);
+    }
   }
 
   // Re-render the timer panel so the button label and clock state reflect run state.
@@ -1194,6 +1225,7 @@ async function _handleEndGame() {
     timestamp: _gs.timerSeconds,
   });
 
+  db_clearPendingAlert(_gs.game.id);
   if (_gs.realtimeChannel) db_unsubscribe(_gs.realtimeChannel);
   if (_gs.queueChannel) db_unsubscribe(_gs.queueChannel);
   _releaseWakeLock();
@@ -2149,6 +2181,7 @@ async function _executeQueueRotation() {
     }
     _gs.lastAlertAt = ts;
     _gs.alertFired = false;
+    db_clearPendingAlert(_gs.game.id);
     _renderSoccerFieldZone();
     _renderSoccerBenchZone();
     _renderSoccerTeamStats();

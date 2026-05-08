@@ -35,6 +35,7 @@ async function router_init() {
   }
 
   const coach = await auth_init();
+  push_init();
   router_navigate('home', { coach });
 }
 

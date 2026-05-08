@@ -407,6 +407,34 @@ async function db_deleteTeam(teamId) {
   return true;
 }
 
+// ── WEB PUSH ──────────────────────────────────────────────────
+
+async function db_savePushSubscription(coachId, endpoint, p256dh, auth) {
+  const { error } = await _db.from('ctb_push_subscriptions')
+    .upsert({ coach_id: coachId, endpoint, p256dh, auth }, { onConflict: 'endpoint' });
+  if (error) { console.error('db_savePushSubscription', error); return false; }
+  return true;
+}
+
+async function db_deletePushSubscription(coachId, endpoint) {
+  await _db.from('ctb_push_subscriptions')
+    .delete().eq('coach_id', coachId).eq('endpoint', endpoint);
+}
+
+async function db_upsertPendingAlert(gameId, coachId, intervalSeconds) {
+  const fireAt = new Date(Date.now() + intervalSeconds * 1000).toISOString();
+  const { error } = await _db.from('ctb_pending_alerts')
+    .upsert({ game_id: gameId, coach_id: coachId, fire_at: fireAt,
+              interval_seconds: intervalSeconds, active: true },
+            { onConflict: 'game_id' });
+  if (error) console.error('db_upsertPendingAlert', error);
+}
+
+async function db_clearPendingAlert(gameId) {
+  await _db.from('ctb_pending_alerts')
+    .update({ active: false }).eq('game_id', gameId);
+}
+
 // ── HELPERS ───────────────────────────────────────────────────
 
 function _generateCode(length) {
