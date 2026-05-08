@@ -1,15 +1,31 @@
 self.addEventListener('push', (event) => {
   const data = event.data?.json() || {};
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'Time to Rotate!', {
-      body: data.body || 'Rotation window is open',
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      vibrate: [200, 100, 200, 100, 200],
-      tag: 'rotation-' + (data.gameId || 'alert'),
-      renotify: true,
-    })
-  );
+  const tag = (data.tag || 'rotation') + '-' + (data.gameId || 'alert');
+  const autoDismissMs = data.autoDismissMs || 0;
+
+  const shown = self.registration.showNotification(data.title || 'Time to Rotate!', {
+    body: data.body || 'Rotation window is open',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    vibrate: [200, 100, 200, 100, 200],
+    tag,
+    renotify: true,
+  });
+
+  if (autoDismissMs > 0) {
+    event.waitUntil(
+      shown.then(() => new Promise(resolve => {
+        setTimeout(() => {
+          self.registration.getNotifications({ tag }).then(ns => {
+            ns.forEach(n => n.close());
+            resolve();
+          });
+        }, autoDismissMs);
+      }))
+    );
+  } else {
+    event.waitUntil(shown);
+  }
 });
 
 self.addEventListener('notificationclick', (event) => {

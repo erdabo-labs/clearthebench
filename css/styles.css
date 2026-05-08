@@ -262,6 +262,41 @@ html, body {
   gap: 12px;
 }
 
+.watch-entry {
+  margin-top: 24px;
+}
+.watch-entry-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.watch-entry-row {
+  display: flex;
+  gap: 8px;
+}
+.watch-code-input {
+  flex: 1;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  font-size: 18px;
+}
+.btn-watch-go {
+  padding: 0 20px;
+  height: 48px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-watch-go:disabled { opacity: .5; }
+
 .privacy-note {
   display: flex;
   align-items: flex-start;

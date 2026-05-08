@@ -89,6 +89,16 @@ router_register('home', async (container, { coach } = {}) => {
           <div class="home-actions">
             <button class="btn-primary" id="btn-signin">Sign In</button>
           </div>
+          <div class="watch-entry">
+            <div class="watch-entry-label">Watching a game?</div>
+            <div class="watch-entry-row">
+              <input class="input-field watch-code-input" id="watch-code-input"
+                type="text" inputmode="text" maxlength="5"
+                placeholder="Game code" autocomplete="off" />
+              <button class="btn-watch-go" id="btn-watch-go">Watch</button>
+            </div>
+            <div id="watch-code-msg" class="form-msg"></div>
+          </div>
           <div class="privacy-note">
             <span>&#128274;</span>
             <span>We only store your email. No passwords, no data sold.</span>
@@ -99,6 +109,7 @@ router_register('home', async (container, { coach } = {}) => {
     container.querySelector('#btn-signin')?.addEventListener('click', () => {
       router_navigate('signin', {});
     });
+    _bindWatchCodeEntry(container);
     return;
   }
 
@@ -182,6 +193,16 @@ router_register('home', async (container, { coach } = {}) => {
         <div class="home-actions">
           <button class="btn-primary" id="btn-new-team">+ New Team</button>
         </div>
+        <div class="watch-entry">
+          <div class="watch-entry-label">Watching a game?</div>
+          <div class="watch-entry-row">
+            <input class="input-field watch-code-input" id="watch-code-input"
+              type="text" inputmode="text" maxlength="5"
+              placeholder="Game code" autocomplete="off" />
+            <button class="btn-watch-go" id="btn-watch-go">Watch</button>
+          </div>
+          <div id="watch-code-msg" class="form-msg"></div>
+        </div>
       </div>
     </div>
   `;
@@ -207,11 +228,46 @@ router_register('home', async (container, { coach } = {}) => {
     router_navigate('create-team', { coach });
   });
 
+  _bindWatchCodeEntry(container);
+
   // Menu (sign out)
   container.querySelector('#btn-menu')?.addEventListener('click', () => {
     _showMenu(container, coach);
   });
 });
+
+function _bindWatchCodeEntry(container) {
+  const input = container.querySelector('#watch-code-input');
+  const btn = container.querySelector('#btn-watch-go');
+  const msg = container.querySelector('#watch-code-msg');
+  if (!btn || !input) return;
+
+  async function goWatch() {
+    const code = input.value.trim().toUpperCase();
+    if (code.length < 4) {
+      msg.textContent = 'Enter the game code from the coach.';
+      msg.className = 'form-msg error';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = '...';
+    const gameId = await db_getGameByWatchCode(code);
+    btn.disabled = false;
+    btn.textContent = 'Watch';
+    if (!gameId) {
+      msg.textContent = 'Code not found. Check with the coach.';
+      msg.className = 'form-msg error';
+      return;
+    }
+    router_navigate('watch', { gameId });
+  }
+
+  btn.addEventListener('click', goWatch);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') goWatch(); });
+  input.addEventListener('input', () => {
+    input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  });
+}
 
 function _showMenu(container, coach) {
   const existing = document.getElementById('ctb-menu-overlay');
