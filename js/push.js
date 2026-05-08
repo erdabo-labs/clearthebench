@@ -19,7 +19,7 @@ async function push_subscribe(coachId) {
   if (!_swReg) return false;
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return false;
-  const key = _b64ToUint8(window.CTB_VAPID_PUBLIC_KEY || '');
+  const key = _b64ToUint8(CTB_VAPID_PUBLIC_KEY || '');
   _pushSub = await _swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
   const json = _pushSub.toJSON();
   return db_savePushSubscription(coachId, json.endpoint, json.keys.p256dh, json.keys.auth);
