@@ -2127,9 +2127,13 @@ async function _executeQueueRotation() {
     _renderFootballBenchZone();
     _renderFootballTeamStats();
   } else {
+    _gs.lastAlertAt = ts;
+    _gs.alertFired = false;
     _renderSoccerFieldZone();
     _renderSoccerBenchZone();
     _renderSoccerTeamStats();
+    _renderSoccerTimerPanel();
+    _bindSoccerTimerControls();
   }
   _renderRotationQueue();
   _saveCrashRecovery();
